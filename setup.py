@@ -38,39 +38,48 @@ def get_version() -> str:
 with open("requirements.txt", "r", encoding="utf-8") as f:
     requirements = [line.strip("\n") for line in f if line.strip("\n") and not line.startswith(("#", "-i", "abstract"))]
 
+with open('README.md') as f:
+    long_description = f.read()
+
+author = "OpenWeather"
+email = "info@openweathermap.org"
 
 setup_kwargs = dict(
     name=PACKAGE_NAME,
     version=get_version(),
-    author="OpenWeatherMap",
+    author=author,
+    author_email=email,
+    maintainer=author,
+    maintainer_email=email,
     description="Tools for Deker management",
-    packages=find_packages(exclude=["tests", "test*.*"]),
-    author_email="info@openweathermap.org",
-    maintainer_email="info@openweathermap.org",
-    url="https://github.com/openweathermap/deker-tools",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/openweathermap/deker-local-adapters",
     license="GPL-3.0-only",
+    license_files=["LICENSE"],
+    packages=find_packages(exclude=["tests", "test*.*"]),
     package_data={PACKAGE_NAME: ["py.typed"]},
     include_package_data=True,
     platforms="any",
-    classifiers=[
-        "Development Status :: 4 - Beta",
-        "Intended Audience :: Developers",
-        "Intended Audience :: Information Technology",
-        "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
-        "Programming Language :: Python",
-        "Topic :: Software Development :: Libraries :: Python Modules",
-        "Operating System :: Unix",
-        "Operating System :: POSIX :: Linux",
-        "Operating System :: MacOS :: MacOS X",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
-        "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-    ],
     python_requires=">=3.8",
-    install_requires=requirements,
+    classifiers=[
+            "Development Status :: 4 - Beta",
+            "Intended Audience :: Developers",
+            "Intended Audience :: Information Technology",
+            "Intended Audience :: Science/Research",
+            "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+            "Topic :: Software Development :: Libraries :: Python Modules",
+            "Operating System :: Unix",
+            "Operating System :: POSIX :: Linux",
+            "Operating System :: MacOS :: MacOS X",
+            "Programming Language :: Python",
+            "Programming Language :: Python :: 3",
+            "Programming Language :: Python :: 3.8",
+            "Programming Language :: Python :: 3.9",
+            "Programming Language :: Python :: 3.10",
+            "Programming Language :: Python :: 3.11",
+            "Programming Language :: Python :: 3.12",
+        ],
+    install_requires=requirements
 )
-
 setup(**setup_kwargs)
