@@ -8,7 +8,7 @@ from typing import Optional
 
 from setuptools import find_packages, setup
 
-from .version import get_git_version
+from version import get_git_version
 
 
 PACKAGE_NAME: str = "deker_tools"
