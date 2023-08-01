@@ -23,6 +23,7 @@ warn_no_return = false
 show_error_context = true
 show_column_numbers = true
 show_error_codes = true
+
 color_output = false
 pretty = true
 exclude = [
@@ -48,8 +49,48 @@ lines_between_types = 1
 multi_line_output = 3
 extend_skip = ['.md', '.json']
 
-# https://hadialqattan.github.io/pycln/#/README
-[tool.pycln]
-all = true
-diff = true
-exclude = 'venv/*,.git/*,__pycache__/*'
+[build-system]
+requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
+
+[project]
+name = "deker_tools"
+requires-python = ">=3.9"
+dynamic = ["version", "readme", "dependencies"]
+authors = [
+    {name = "OpenWeather", email = "info@openweathermap.org"},
+]
+maintainers = [
+        {name = "OpenWeather", email = "info@openweathermap.org"},
+]
+description = "Interactive shell for Deker"
+license = {text = "GPL-3.0-only"}
+
+classifiers = [
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Information Technology",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Operating System :: Unix",
+        "Operating System :: POSIX :: Linux",
+        "Operating System :: MacOS :: MacOS X",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+]
+[project.urls]
+'Homepage' = 'https://deker.io/'
+'Documentation' = 'https://docs.deker.io/'
+'Repository' = 'https://github.com/openweathermap/deker-tools'
+
+[tool.setuptools.dynamic]
+readme = {file = ["README.md"], content-type='text/markdown'}
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools]
+packages = ["deker_tools"]
+license-files=["LICENSE"]
+[tool.setuptools_scm]
