@@ -12,15 +12,27 @@ from setuptools import find_packages, setup
 
 PACKAGE_NAME: str = "deker_tools"
 
-import setuptools
+def get_version() -> str:
+    """Get version from commit tag.
 
-def myversion():
-    from setuptools_scm.version import get_local_dirty_tag
-    def clean_scheme(version):
-        return get_local_dirty_tag(version) if version.dirty else '+clean'
-
-    return {'local_scheme': clean_scheme}
-
+    Regexp reference:
+    https://gitlab.openweathermap.org/help/user/packages/pypi_repository/index.md#ensure-your-version-string-is-valid
+    """
+    ci_commit_tag: Optional[str] = os.getenv("PACKAGE_VERSION", "0.0.0")
+    regex = (
+        r"(?:"
+        r"(?:([0-9]+)!)?"
+        r"([0-9]+(?:\.[0-9]+)*)"
+        r"([-_\.]?((a|b|c|rc|alpha|beta|pre|preview))[-_\.]?([0-9]+)?)?"
+        r"((?:-([0-9]+))|(?:[-_\.]?(post|rev|r)[-_\.]?([0-9]+)?))?"
+        r"([-_\.]?(dev)[-_\.]?([0-9]+)?)?"
+        r"(?:\+([a-z0-9]+(?:[-_\.][a-z0-9]+)*))?"
+        r")$"
+    )
+    try:
+        return re.search(regex, ci_commit_tag, re.X + re.IGNORECASE).group()
+    except Exception:
+        sys.exit(f"No valid version could be found in CI commit tag {ci_commit_tag}")
 
 with open("requirements.txt", "r", encoding="utf-8") as f:
     requirements = [line.strip("\n") for line in f if line.strip("\n") and not line.startswith(("#", "-i", "abstract"))]
@@ -28,11 +40,7 @@ with open("requirements.txt", "r", encoding="utf-8") as f:
 
 setup_kwargs = dict(
     name=PACKAGE_NAME,
-    use_scm_version=myversion,
-    setuptools_git_versioning={
-        "enabled": True,
-    },
-    setup_requires=["setuptools-git-versioning<2"],
+    version=get_version(),
     author="OpenWeatherMap",
     description="Tools for Deker management",
     packages=find_packages(exclude=["tests", "test*.*"]),
