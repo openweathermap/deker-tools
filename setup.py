@@ -8,12 +8,18 @@ from typing import Optional
 
 from setuptools import find_packages, setup
 
-from version import get_git_version
 
 
 PACKAGE_NAME: str = "deker_tools"
 
+import setuptools
 
+def myversion():
+    from setuptools_scm.version import get_local_dirty_tag
+    def clean_scheme(version):
+        return get_local_dirty_tag(version) if version.dirty else '+clean'
+
+    return {'local_scheme': clean_scheme}
 
 
 with open("requirements.txt", "r", encoding="utf-8") as f:
@@ -22,7 +28,7 @@ with open("requirements.txt", "r", encoding="utf-8") as f:
 
 setup_kwargs = dict(
     name=PACKAGE_NAME,
-    version=get_git_version(),
+    use_scm_version=myversion,
     author="OpenWeatherMap",
     description="Tools for Deker management",
     packages=find_packages(exclude=["tests", "test*.*"]),

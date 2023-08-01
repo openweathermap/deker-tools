@@ -23,6 +23,7 @@ warn_no_return = false
 show_error_context = true
 show_column_numbers = true
 show_error_codes = true
+
 color_output = false
 pretty = true
 exclude = [
@@ -53,3 +54,12 @@ extend_skip = ['.md', '.json']
 all = true
 diff = true
 exclude = 'venv/*,.git/*,__pycache__/*'
+
+[build-system]
+requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
+
+[project]
+dynamic = ["version"]
+
+[tool.setuptools_scm]
+
