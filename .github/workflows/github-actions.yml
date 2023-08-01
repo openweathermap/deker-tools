@@ -1,4 +1,4 @@
-name: pipeline
+name: CI/CD
 
 on:
   push:
@@ -199,8 +199,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
 
       - name: Build sdist
         run: pipx run build --sdist
@@ -229,5 +227,4 @@ jobs:
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
 
