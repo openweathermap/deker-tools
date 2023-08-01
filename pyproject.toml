@@ -81,9 +81,13 @@ classifiers = [
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
 ]
+[project.urls]
+'Homepage' = 'https://deker.io/'
+'Documentation' = 'https://docs.deker.io/'
+'Repository' = 'https://github.com/openweathermap/deker-tools'
 
 [tool.setuptools.dynamic]
-readme = {file = ["README.md"]}
+readme = {file = ["README.md"], content-type='text/markdown'}
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools]
