@@ -29,6 +29,10 @@ with open("requirements.txt", "r", encoding="utf-8") as f:
 setup_kwargs = dict(
     name=PACKAGE_NAME,
     use_scm_version=myversion,
+    setuptools_git_versioning={
+        "enabled": True,
+    },
+    setup_requires=["setuptools-git-versioning<2"],
     author="OpenWeatherMap",
     description="Tools for Deker management",
     packages=find_packages(exclude=["tests", "test*.*"]),
