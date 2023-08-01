@@ -60,6 +60,7 @@ requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
 
 [project]
 dynamic = ["version"]
+name = "deker_tools"
 
 [tool.setuptools_scm]
 
