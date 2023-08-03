@@ -147,17 +147,19 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Check Tag
-        id: check-tag
-        run: |
-          if [[ ${{ github.event.ref }} =~ ^refs/tags/v(?:(?:([0-9]+)!)?([0-9]+(?:\.[0-9]+)*)([-_\.]?((a|b|c|rc|alpha|beta|pre|preview))[-_\.]?([0-9]+)?)?((?:-([0-9]+))|(?:[-_\.]?(post|rev|r)[-_\.]?([0-9]+)?))?([-_\.]?(dev)[-_\.]?([0-9]+)?)?(?:\+([a-z0-9]+(?:[-_\.][a-z0-9]+)*))?)$]]; then
-              echo "match=true" >> $GITHUB_OUTPUT
-          fi 
+    permissions:
+      contents: read
+
+    steps:
+      - uses: nowsprinting/check-version-format-action@v3
+        id: version
+        with:
+          prefix: 'v'
 
   tox_tests:
     needs: [validate_version, setup]
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.validate_version.ouputs.match == 'true' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.validate_version.ouputs.is_valid == 'true' }}
     container:
       image: ghcr.io/openweathermap/deker/deker-embedded/tox:latest
       env:
