@@ -112,8 +112,8 @@ lines_between_types = 1
 multi_line_output = 3
 extend_skip = [".md", ".json"]
 known_local_folder = ["deker_tools"]
-known_third_party = []
-extra_standard_library = []
+known_third_party = ["deker_tools"]
+extra_standard_library = ["zoneinfo"]
 use_parentheses = true
 
         ###########
@@ -139,11 +139,12 @@ exclude = [
     '^setup\.py$',
     '^tmp\.py$',
     '^venv/',
+    '^.venv/',
     '^test+\.py$',
     '^conftest\.py$',
-    '^tests/'
+    '^tmp/',
+    '^examples/'
 ]
-
 disable_error_code = "misc,no-redef,override,union-attr,index,assignment"
 
 [[tool.mypy.overrides]]
