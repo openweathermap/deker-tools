@@ -10,11 +10,6 @@ You may find this package useful in projects, even those not related to Deker.
 pip install deker-tools
 ```
 
-or
-```
-python -m pip install deker-tools
-```
-
 ## Usage
 
 You will get a collection of utility functions and classes designed to assist in common data processing tasks.
