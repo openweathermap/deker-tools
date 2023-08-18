@@ -41,6 +41,10 @@ style = "semver"
 metadata = false
 
 [[tool.poetry.source]]
+name = "PyPI"
+priority = "primary"
+
+[[tool.poetry.source]]
 name = "testpypi"
 url = "https://test.pypi.org/simple/"
 priority = "supplemental"
