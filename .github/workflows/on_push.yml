@@ -11,4 +11,4 @@ jobs:
     with:
       package-name: ${{ vars.PACKAGE_NAME }}
       python-version: '3.8'
-      min-coverage: 60
+      min-coverage: 86
