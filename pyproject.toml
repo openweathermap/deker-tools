@@ -33,6 +33,7 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 
 [tool.poetry-dynamic-versioning]
@@ -55,7 +56,7 @@ priority = "supplemental"
                                 ####################
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.9,<3.13"
 numpy = "^1.18"
 
 [tool.poetry.group.dev.dependencies]
