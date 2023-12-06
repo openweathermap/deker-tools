@@ -20,11 +20,11 @@ import math
 def convert_size_to_human(size_bytes: int) -> str:
     """Convert bytes to human size.
 
-    :param size_bytes: size in Bytes
+    :param size_bytes: size in bytes
     """
     if size_bytes == 0:
-        return "0 B"
-    size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+        return "0 b"
+    size_name = ("b", "Kb", "Mb", "Gb", "Tb", "Pb", "Eb", "Zb", "Yb")
     i = int(math.floor(math.log(size_bytes, 1024)))
     p = math.pow(1024, i)
     s = round(size_bytes / p, 2)
