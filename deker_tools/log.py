@@ -1,8 +1,11 @@
 import logging
-from typing import NamedTuple, List, Union
+
+from typing import List, NamedTuple, Union
 
 
 class LoggerNode(NamedTuple):
+    """Class describes logger node."""
+
     name: str
     logger: Union[logging.Logger, logging.PlaceHolder]
     children: List['LoggerNode']

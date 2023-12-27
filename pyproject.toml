@@ -182,6 +182,7 @@ exclude = [
     "examples/*",
     "tmp/*",
     "tests/*",
+    ".eggs/*",
     "tmp.py"
 ]
 
