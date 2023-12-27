@@ -29,7 +29,6 @@ classifiers = [
     "Operating System :: MacOS :: MacOS X",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -56,7 +55,7 @@ priority = "supplemental"
                                 ####################
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.9"
 numpy = "^1.18"
 
 [tool.poetry.group.dev.dependencies]
@@ -101,12 +100,12 @@ doc8 = "0.11.2"
         ##############
 
 [tool.black]  # code formatter
-target-version = ['py38', 'py39']
+target-version = ['py39']
 line-length = 120
 
 [tool.isort]  # imports sorter
 # https://pycqa.github.io/isort/
-py_version = 38
+py_version = 39
 sections = ['FUTURE', 'STDLIB', 'THIRDPARTY', 'FIRSTPARTY', 'LOCALFOLDER']
 profile = "black"
 atomic = true
@@ -128,7 +127,7 @@ use_parentheses = true
 [tool.mypy]  # code linter
 # https://mypy.readthedocs.io/en/stable/
 # https://pypi.org/project/mypy-extensions/
-python_version = "3.8"
+python_version = "3.9"
 ignore_missing_imports = true
 scripts_are_modules = true
 allow_redefinition = true
@@ -163,7 +162,7 @@ disallow_untyped_defs = false
 # https://pypi.org/project/flake8-import-order/
 # https://pypi.org/project/flake8-pytest-style/
 # https://pypi.org/project/pep8-naming/
-min_python_version = 3.8
+min_python_version = 3.9
 max-complexity = 20
 max-doc-length = 120
 max-line-length = 120
@@ -183,6 +182,7 @@ exclude = [
     "examples/*",
     "tmp/*",
     "tests/*",
+    ".eggs/*",
     "tmp.py"
 ]
 
