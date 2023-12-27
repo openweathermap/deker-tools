@@ -1,10 +1,10 @@
 import logging
-from typing import NamedTuple, List
+from typing import NamedTuple, List, Union
 
 
 class LoggerNode(NamedTuple):
     name: str
-    logger: logging.Logger
+    logger: Union[logging.Logger, logging.PlaceHolder]
     children: List['LoggerNode']
 
 
@@ -31,7 +31,7 @@ def tree() -> LoggerNode:
     return root
 
 
-def set_logger(format_string: str):
+def set_logger(format_string: str) -> None:
     """Set format for all loggers in the tree.
 
     :param format_string: Which format we set.
@@ -39,7 +39,7 @@ def set_logger(format_string: str):
     loggers = tree()
     fmt = logging.Formatter(fmt=format_string)
 
-    def set_format_for_loggers(node: LoggerNode):
+    def set_format_for_loggers(node: LoggerNode) -> None:
         name, logger, children = node
         if not isinstance(logger, logging.PlaceHolder):
             for handler in logger.handlers:
