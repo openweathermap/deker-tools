@@ -1,8 +1,7 @@
 # https://black.readthedocs.io/en/stable/
 [tool.black]
 line-length = 120
-target-version = ['py37', 'py38', 'py39']
-#target-version = ['py310']
+target-version = ['py39']
 include = '\.pyi?$'
 extend-exclude = '''
 # A regex preceded with ^/ will apply only to files and directories
@@ -13,7 +12,7 @@ extend-exclude = '''
 # https://mypy.readthedocs.io/en/stable/
 # https://pypi.org/project/mypy-extensions/
 [tool.mypy]
-python_version = '3.8'
+python_version = '3.9'
 ignore_missing_imports = true
 scripts_are_modules = true
 allow_redefinition = true
@@ -37,7 +36,7 @@ exclude = [
 
 # https://pycqa.github.io/isort/
 [tool.isort]
-py_version = 38
+py_version = 39
 sections = ['FUTURE', 'STDLIB', 'THIRDPARTY', 'FIRSTPARTY', 'LOCALFOLDER']
 known_local_folder = ['deker_tools', ]
 profile = 'black'
