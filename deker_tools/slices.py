@@ -22,7 +22,9 @@ from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 
-from numpy.lib.index_tricks import IndexExpression
+
+# numpy.lib.index_tricks is private in numpy 2; np.s_ is public in numpy 1.26 and 2.x
+IndexExpression = type(np.s_)
 
 
 __all__ = ["match_slice_size", "create_shape_from_slice", "slice_converter", "SliceConversionError"]

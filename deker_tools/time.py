@@ -26,12 +26,12 @@ def get_utc(dt: Optional[Union[str, int, float, datetime]] = None) -> datetime:
     :param dt: ``datetime.datetime`` object, timestamp, datetime iso-string or ``None``;
     """
     if dt is None:
-        return datetime.utcnow().replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc)
 
     if isinstance(dt, datetime):
         dt = dt.isoformat()  # convert any timezone objects to native format
     elif isinstance(dt, (float, int)):
-        dt = datetime.utcfromtimestamp(dt).isoformat()
+        dt = datetime.fromtimestamp(dt, timezone.utc).isoformat()
 
     dt_object = datetime.fromisoformat(dt)
 
@@ -39,5 +39,5 @@ def get_utc(dt: Optional[Union[str, int, float, datetime]] = None) -> datetime:
         dt_object = dt_object.replace(tzinfo=timezone.utc)
     elif dt_object.tzinfo != timezone.utc:
         tm = dt_object.timestamp()
-        dt_object = datetime.utcfromtimestamp(tm).replace(tzinfo=timezone.utc)
+        dt_object = datetime.fromtimestamp(tm, timezone.utc)
     return dt_object
