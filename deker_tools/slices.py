@@ -22,8 +22,8 @@ from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 
-from numpy.lib.index_tricks import IndexExpression
-
+# numpy 2 made numpy.lib.index_tricks private; this works on numpy 1.26 and 2.x
+IndexExpression = type(np.index_exp)
 
 __all__ = ["match_slice_size", "create_shape_from_slice", "slice_converter", "SliceConversionError"]
 
@@ -311,7 +311,7 @@ class _SliceToStringMixin(type, metaclass=_StringEscape):
             return f"[{cls._slice_to_str[slice_]}]"
 
         if isinstance(slice_, Iterable):
-            slice_strs = [convert_slice(sl) for sl in slice_]  # type: ignore[union-attr]
+            slice_strs = [convert_slice(sl) for sl in slice_]  # type: ignore[attr-defined]
             return f"[{', '.join(slice_strs)}]"
         return f"[{convert_slice(slice_)}]"
 
