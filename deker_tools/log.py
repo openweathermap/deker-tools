@@ -8,7 +8,7 @@ class LoggerNode(NamedTuple):
 
     name: str
     logger: Union[logging.Logger, logging.PlaceHolder]
-    children: List['LoggerNode']
+    children: List["LoggerNode"]
 
 
 def tree() -> LoggerNode:
@@ -19,13 +19,13 @@ def tree() -> LoggerNode:
     same layout.
 
     """
-    root = LoggerNode('', logging.root, [])
+    root = LoggerNode("", logging.root, [])
     nodes = {}
     items = list(logging.root.manager.loggerDict.items())  # for Python 2 and 3
     items.sort()
     for name, logger in items:
         nodes[name] = node = LoggerNode(name, logger, [])
-        i = name.rfind('.', 0, len(name) - 1)  # same formula used in `logging`
+        i = name.rfind(".", 0, len(name) - 1)  # same formula used in `logging`
         if i == -1:
             parent = root
         else:

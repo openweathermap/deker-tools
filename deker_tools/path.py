@@ -21,7 +21,6 @@ import sys
 from pathlib import Path
 from typing import Union
 
-
 __all__ = ["is_empty", "is_path_valid"]
 
 Pathlike = Union[Path, str]
