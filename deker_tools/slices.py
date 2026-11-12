@@ -1,5 +1,5 @@
 # deker-tools - shared functions library for deker components
-# Copyright (C) 2023  OpenWeather
+# Copyright (C) 2023-2026  OpenWeather
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import ast
 import datetime
+import math
+import numbers
 import re
 
 from collections.abc import Iterable
@@ -35,15 +38,22 @@ __all__ = ["match_slice_size", "create_shape_from_slice", "slice_converter", "Sl
 
 Slice: TypeAlias = Union[IndexExpression, slice, EllipsisType, int, tuple[Union[slice, int, EllipsisType, None], ...]]
 
+# one unit of an index expression as the string form reads it
+SliceUnit: TypeAlias = Union[int, float, str, datetime.datetime, datetime.timedelta, EllipsisType, tuple[()], None]
+# one unit as the string form accepts it for writing: numpy scalars are converted to the plain types above
+SliceUnitInput: TypeAlias = Union[SliceUnit, np.integer, np.floating, np.datetime64, np.timedelta64]
+
 FancySlice: TypeAlias = Union[
     IndexExpression,
     slice,
-    EllipsisType,
-    int,
-    float,
-    str,
-    datetime.datetime,
-    tuple[Union[slice, int, float, str, datetime.datetime, EllipsisType, None], ...],
+    SliceUnit,
+    tuple[Union[slice, SliceUnit], ...],
+]
+FancySliceInput: TypeAlias = Union[
+    slice,
+    SliceUnitInput,
+    tuple[Union[slice, SliceUnitInput], ...],
+    list[Union[slice, SliceUnitInput]],
 ]
 
 
@@ -125,6 +135,54 @@ class _StringEscape(type):
     """Sets escape symbol for string."""
 
     _string_escape = "`"
+    _isostring_regex = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?((\+|-)(\d{2}:\d{2}))?)")
+    # ISO 8601 duration with days, hours, minutes and seconds; the lookaheads reject "P", "PT" and a trailing "T"
+    _duration_regex = re.compile(
+        r"(?P<sign>-)?P(?!T?$)(?:(?P<days>\d+)D)?"
+        r"(?:T(?!$)(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+(?:\.\d+)?)S)?)?"
+    )
+
+    @classmethod
+    def _parse_duration(cls, string: str) -> datetime.timedelta:
+        """Parse an ISO 8601 duration (days, hours, minutes, seconds; optional leading minus).
+
+        :param string: duration string, e.g. ``"PT3H"``, ``"P1DT12H30M"``, ``"-PT0.5S"``
+        :returns: the duration as ``timedelta``
+        :raises ValueError: if the string is not a duration or has no components
+        """
+        match = cls._duration_regex.fullmatch(string)
+        if not match:  # pragma: no cover  # guard: callers check the regex first
+            raise ValueError(f"Invalid ISO 8601 duration: {string!r}")
+        duration = datetime.timedelta(
+            days=int(match["days"] or 0),
+            hours=int(match["hours"] or 0),
+            minutes=int(match["minutes"] or 0),
+            seconds=float(match["seconds"] or 0),
+        )
+        return -duration if match["sign"] else duration
+
+    @classmethod
+    def _format_duration(cls, duration: datetime.timedelta) -> str:
+        """Write a ``timedelta`` as an ISO 8601 duration (days, hours, minutes, seconds).
+
+        :param duration: duration to write
+        :returns: duration string, e.g. ``"PT3H"``, ``"P1DT12H30M"``, ``"-PT0.5S"``; zero is ``"PT0S"``
+        """
+        sign = "-" if duration < datetime.timedelta(0) else ""
+        duration = abs(duration)
+        hours, remainder = divmod(duration.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        date_part = f"{duration.days}D" if duration.days else ""
+        time_part = ""
+        if hours:
+            time_part += f"{hours}H"
+        if minutes:
+            time_part += f"{minutes}M"
+        if seconds or duration.microseconds:
+            time_part += f"{seconds + duration.microseconds / 1_000_000:g}S" if duration.microseconds else f"{seconds}S"
+        if not date_part and not time_part:
+            time_part = "0S"
+        return f"{sign}P{date_part}{'T' + time_part if time_part else ''}"
 
     @classmethod
     def _wrap_with_escape(cls, string: str) -> str:
@@ -155,194 +213,255 @@ class _StringEscape(type):
 
 
 class _StringToSliceMixin(type, metaclass=_StringEscape):
-    """Converts string to slices."""
+    """Converts a slice string to slice objects.
 
-    # maps default non-numeric slices values
-    _str_to_slice = {"None": None, "": None, "...": ..., "()": ()}
-    _isostring_regex = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?((\+|-)(\d{2}:\d{2}))?)")
+    The parser only translates tokens into Python values; whether a value makes sense for a particular
+    dimension is decided by the array that receives the slice.
+    """
+
+    # quoted segments and datetime isostrings are swapped for placeholders while splitting,
+    # so that the separators inside them (":" and ",") do not split
+    _placeholder = "\x00"
+    _protected_regex = re.compile(r"`[^`]*`|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:[+-]\d{2}:\d{2})?")
 
     @classmethod
-    def _process_string(cls, string: str) -> int | float | str | slice | EllipsisType | tuple[()] | None:
-        """Validate and get value from string.
+    def _parse_literal(cls, token: str) -> int | float | EllipsisType | tuple[()] | None:
+        """Parse a token as a Python literal of one of the allowed forms.
 
-        :param string: string to be processed
-        :returns: ``None``, ``Ellipsis``, a number, a datetime slice or the string itself
+        Allowed forms: an ``int`` or ``float`` constant with an optional single unary minus, ``None``, ``...``
+        and the empty tuple ``()``. Anything else (``bool``, names, containers, quoted strings, double signs)
+        is not a literal of a slice string.
+
+        :param token: stripped token
+        :returns: parsed value
+        :raises ValueError: if the token is not a literal of an allowed form
         """
+        try:
+            node = ast.parse(token, mode="eval").body
+        except SyntaxError:
+            raise ValueError(f"Not a literal: {token!r}")
+
+        if isinstance(node, ast.Constant):
+            value = node.value
+            if value is None or value is Ellipsis:
+                return value
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return value
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub) and isinstance(node.operand, ast.Constant):
+            operand = node.operand.value
+            if isinstance(operand, (int, float)) and not isinstance(operand, bool):
+                return -operand
+        elif isinstance(node, ast.Tuple) and not node.elts:
+            return ()
+        raise ValueError(f"Not a literal: {token!r}")
+
+    @classmethod
+    def _process_string(cls, string: str) -> SliceUnit:
+        """Convert one token of a slice string into a value.
+
+        The order matters:
+
+        1. a token enclosed in escape symbols is a string, whatever it contains;
+        2. an ISO 8601 datetime (``2023-06-11T00:00:00+00:00``) is kept as a string;
+        3. an ISO 8601 duration (``PT3H``, ``-P1DT12H``) becomes a ``timedelta``;
+        4. an allowed literal becomes ``int``, ``float``, ``None``, ``...`` or ``()``;
+        5. anything else is a label: a plain string, kept as is.
+
+        :param string: token to be processed
+        :returns: ``None``, ``Ellipsis``, ``()``, a number, a ``timedelta`` or a string
+        """
+        if not isinstance(string, str):  # pragma: no cover  # guard for non-str input
+            raise TypeError(f"Invalid unit '{string}' type: {type(string)}")
+
         string = string.strip()
-        str_for_check = string
-
-        # try to validate negative numbers
-        if string.startswith("-"):
-            str_for_check = string[1:]
-
-        # check if string is None or ...
-        if str_for_check in cls._str_to_slice:
-            return cls._str_to_slice[string]
-
-        # check if string is still empty
-        if str_for_check is False or str_for_check.isspace():
+        if not string:
             return None
 
-        # check if string is integer
-        if str_for_check.isdigit():
-            return int(string)
+        if cls._is_wrapped_with_escape(string) and string.count(cls._string_escape) == 2:
+            return cls._unwrap(string)
 
-        # check if string is float
-        if str_for_check.replace(".", "").isdigit():
-            return float(string)
+        if cls._isostring_regex.fullmatch(string):
+            return string
 
-        if isinstance(str_for_check, str):
-            if cls._is_wrapped_with_escape(str_for_check):
-                if str_for_check.count(cls._string_escape) == 2:
-                    str_for_check = cls._unwrap(str_for_check)
-            return str_for_check
+        if cls._duration_regex.fullmatch(string):
+            return cls._parse_duration(string)
 
-        raise TypeError(f"Invalid unit '{string}' type: {type(string)}")
+        try:
+            return cls._parse_literal(string)
+        except ValueError:
+            return string
 
     @classmethod
-    def _convert_str_to_slice(cls, slice_string: str) -> slice:
-        """Convert a slice string to a slice object.
+    def _protect(cls, string: str) -> tuple[str, list[str]]:
+        """Replace quoted segments and ISO datetimes with placeholders.
 
-        :param slice_string: slice string to convert
-        :returns: slice built from the ``start:stop:step`` parts of the string
+        After that the string can be split by ``","`` and ``":"`` with plain ``str.split``: the separators
+        inside quotes and datetimes are hidden in the placeholders.
+
+        :param string: contents of the slice string without the brackets
+        :returns: the string with placeholders and the list of the protected segments, in order
         """
-        slice_parameters = []
-        for i in slice_string.split(":"):
-            pos = cls._process_string(i.strip())
-            slice_parameters.append(pos)
-        return slice(*slice_parameters)
+        protected: list[str] = []
+        pieces: list[str] = []
+        last = 0
+        for match in cls._protected_regex.finditer(string):
+            pieces.append(string[last : match.start()])
+            pieces.append(f"{cls._placeholder}{len(protected)}{cls._placeholder}")
+            protected.append(match.group(0))
+            last = match.end()
+        pieces.append(string[last:])
+        return "".join(pieces), protected
 
     @classmethod
-    def _parse_datetime(cls, slice_string: str, match_list: list) -> slice | str:
-        """Parse datetime isostrings and convert them to a slice object.
+    def _restore(cls, token: str, protected: list[str]) -> str:
+        """Put the protected segments back into one token.
 
-        :param slice_string: initial slice string to convert
-        :param match_list: list of matched datetime isostrings to convert
-        :returns: slice of datetime isostrings, or the single isostring if there is no range
+        :param token: token with placeholders
+        :param protected: segments returned by :meth:`_protect`
+        :returns: token with the original segments
         """
-        slice_string = slice_string.replace(cls._string_escape, "").strip()
-        slice_parameters = [i[0] for i in match_list if i]
-        length = 3
-        slice_parameters_length = len(slice_parameters)
-        if len(slice_parameters) < length:
-            first: str = slice_parameters[0]
-            split_by_time = slice_string.split(first)
-            if len(slice_parameters) == 1 and (
-                len(split_by_time) == 1 or (len(split_by_time) == 2 and all(not s for s in split_by_time))
-            ):
-                return first
-            if not slice_string.startswith(first):
-                split = slice_string.split(first)
-                start = split[0].strip(cls._string_escape).strip(":").strip(cls._string_escape).strip()
-                slice_parameters.insert(0, cls._process_string(start))
-                if split[-1] != split[0]:
-                    step = split[-1].strip(cls._string_escape).strip(":").strip(cls._string_escape).strip()
-                    slice_parameters.append(cls._process_string(step))
-            else:
-                slice_parameters.extend(None for _ in range(length - slice_parameters_length))
-
-        return slice(*slice_parameters)
+        for index, original in enumerate(protected):
+            token = token.replace(f"{cls._placeholder}{index}{cls._placeholder}", original)
+        return token
 
     @classmethod
     def _str_to_slices(cls, slice_: str) -> FancySlice:
-        """Convert a slice string to a list of slices.
+        """Convert a slice string to a value, a slice or a tuple of them.
 
         :param slice_: string to convert
-        :returns: slice, int or a tuple of them, parsed from the string
+        :returns: slice, value or a tuple of them, parsed from the string
+        :raises SliceConversionError: if the string is not enclosed in square brackets, is empty,
+          or an element has more than three ``:``-separated parts
         """
-        # split the input string into slice strings and convert each one to a slice object
         if not slice_.startswith("[") or not slice_.endswith("]"):
             raise SliceConversionError(f"Invalid slice string: {slice_}; shall be enclosed in brackets: '[{slice_}]'")
-        slices_str_no_brackets: str = slice_[1:-1]
-        if not slices_str_no_brackets or slices_str_no_brackets.isspace():
+        body: str = slice_[1:-1]
+        if not body or body.isspace():
             raise SliceConversionError(f"Invalid slice string: {slice_} is empty")
 
-        slices_str = slices_str_no_brackets.split(",")
-
+        body, protected = cls._protect(body)
         res: list = []
-        for slice_str in slices_str:
-            # check if string is an ordinary string, datetime or slice
-            # ":" may appear both in slices and datetime isostrings
-            if ":" in slice_str:
-                match = re.findall(cls._isostring_regex, slice_str)
-                if match:  # dimension represents datetime
-                    pos = cls._parse_datetime(slice_str, match)
-                else:  # all other dimensions represent any other values except time
-                    pos = cls._convert_str_to_slice(slice_str)
-            else:
-                pos = cls._process_string(slice_str)
-            res.append(pos)
+        for element in body.split(","):
+            parts = element.split(":")
+            if len(parts) > 3:
+                element = cls._restore(element, protected)
+                raise SliceConversionError(f"Invalid slice string: {element}; a slice has at most start, stop and step")
+            tokens = [cls._process_string(cls._restore(part, protected)) for part in parts]
+            # a colon outside quotes and datetimes means a slice, anything else is a value
+            res.append(slice(*tokens) if len(tokens) > 1 else tokens[0])
 
         return tuple(res) if len(res) != 1 else res[0]
 
 
 class _SliceToStringMixin(type, metaclass=_StringEscape):
-    """Converts indexes and slices to string."""
+    """Converts values and slices to a slice string."""
 
     # maps default non-numeric slices values
     _slice_to_str = {None: ":", ...: "...", (): "()"}
 
     @classmethod
-    def _slices_to_str(cls, slice_: FancySlice | None) -> str:
-        """Convert a slice object(s) to a slice string.
+    def _normalize_unit(cls, value: SliceUnitInput) -> SliceUnit:
+        """Bring one index unit to the Python type the string form is written from.
 
-        :param slice_: slice or slices tuple to convert
-        :returns: slice string enclosed in square brackets
+        numpy scalars are accepted and converted: integers and floats to ``int``/``float``, ``datetime64``
+        to ``datetime`` (microsecond precision, naive), ``timedelta64`` to ``timedelta``.
+
+        :param value: unit of an index expression
+        :returns: the same value as a plain Python type
+        :raises TypeError: for ``bool``, ``nan``/``inf``, ``NaT`` and any type the string form cannot represent
         """
+        if isinstance(value, (bool, np.bool_)):
+            raise TypeError("bool is not a valid index")
+        if value is None or value is Ellipsis:
+            return value
+        if isinstance(value, (str, datetime.datetime, datetime.timedelta)):
+            return value
+        # numpy date/time scalars go BEFORE the numbers check: np.timedelta64 is registered as numbers.Integral
+        if isinstance(value, np.datetime64):
+            if np.isnat(value):
+                raise TypeError("NaT is not a valid index")
+            return value.astype("datetime64[us]").astype(datetime.datetime)
+        if isinstance(value, np.timedelta64):
+            if np.isnat(value):
+                raise TypeError("NaT is not a valid step")
+            return value.astype("timedelta64[us]").item()
+        if isinstance(value, numbers.Integral):  # int, np.int64, np.int32, ...
+            return int(value)
+        if isinstance(value, numbers.Real):  # float, np.float64, np.float32, ...
+            value = float(value)
+            if not math.isfinite(value):
+                raise TypeError("nan and inf are not valid indices")
+            return value
+        raise TypeError(f"{type(value).__name__} is not representable in a slice string")
 
-        def convert_slice(_slice_: FancySlice | None) -> str:
-            """Convert a slice object to a slice string.
+    @classmethod
+    def _unit_to_str(cls, value: SliceUnit) -> str:
+        """Write one normalized unit in the string form.
 
-            :param _slice_: slice to convert
-            :returns: string representation of one slice element
-            """
-            if _slice_ is None or _slice_ is Ellipsis:
-                return cls._slice_to_str[_slice_]
+        :param value: normalized unit
+        :returns: string representation of the unit
+        """
+        if value is None:
+            return ""
+        if value is Ellipsis or value == ():
+            return cls._slice_to_str[value]
+        if isinstance(value, str):
+            return cls._wrap_with_escape(value)
+        if isinstance(value, datetime.datetime):
+            return cls._wrap_with_escape(value.isoformat())
+        if isinstance(value, datetime.timedelta):
+            return cls._format_duration(value)
+        return str(value)
 
-            slice_parameters = []
-            if isinstance(_slice_, slice):
-                for attr in ("start", "stop", "step"):
-                    el = getattr(_slice_, attr)
-                    if isinstance(el, datetime.datetime):
-                        el = cls._wrap_with_escape(el.isoformat())
-                    elif isinstance(el, str):
-                        el = cls._wrap_with_escape(el)
-                    slice_parameters.append(str(el))
+    @classmethod
+    def _convert_element(cls, element: SliceUnitInput | slice) -> str:
+        """Convert one element of the index expression to its string form.
 
-                slice_string = ":".join(slice_parameters).replace("None", "")
-                if slice_string.endswith(":"):
-                    slice_string = slice_string[:-1]
-                return slice_string
+        :param element: value or slice to convert
+        :returns: string representation of one index expression element
+        """
+        if isinstance(element, slice):
+            parts = [
+                cls._unit_to_str(cls._normalize_unit(getattr(element, attr))) for attr in ("start", "stop", "step")
+            ]
+            slice_string = ":".join(parts)
+            if slice_string.endswith(":"):
+                slice_string = slice_string[:-1]
+            return slice_string
+        unit = cls._normalize_unit(element)
+        if unit is None:
+            return cls._slice_to_str[None]
+        return cls._unit_to_str(unit)
 
-            if isinstance(_slice_, str):
-                return cls._wrap_with_escape(_slice_)
-            if isinstance(_slice_, (int, float)):
-                return str(_slice_)
-            if isinstance(_slice_, datetime.datetime):
-                return cls._wrap_with_escape(_slice_.isoformat())
+    @classmethod
+    def _slices_to_str(cls, slice_: FancySliceInput) -> str:
+        """Convert a value, a slice or a tuple/list of them to a slice string.
 
-            raise TypeError(f"Invalid unit '{_slice_}' type: {type(_slice_)}")
-
-        if slice_ == ():
-            return f"[{cls._slice_to_str[slice_]}]"
-
-        if isinstance(slice_, Iterable):
-            slice_strs = [convert_slice(sl) for sl in slice_]
-            return f"[{', '.join(slice_strs)}]"
-        return f"[{convert_slice(slice_)}]"
+        :param slice_: value, slice, or a tuple/list of values and slices
+        :returns: slice string enclosed in square brackets
+        :raises TypeError: if a container other than ``tuple``/``list`` is passed
+        """
+        if isinstance(slice_, (tuple, list)):
+            if not slice_:
+                return f"[{cls._slice_to_str[()]}]"
+            return f"[{', '.join(cls._convert_element(element) for element in slice_)}]"
+        if isinstance(slice_, Iterable) and not isinstance(slice_, str):
+            raise TypeError(f"{type(slice_).__name__} is not representable in a slice string; use a tuple or a list")
+        return f"[{cls._convert_element(slice_)}]"
 
 
 class _SliceConverter(_SliceToStringMixin, _StringToSliceMixin):
     """Converts slices to string and vice versa. Check slice_converter class for interface."""
 
-    def __getitem__(cls, item: FancySlice | str) -> str | FancySlice:
+    def __getitem__(cls, item: FancySliceInput | str) -> str | FancySlice:
         """Call slices_to_str or str_to_slices depending on item type.
 
         :param item: item to convert
         :returns: slice string for a slice object, or slice object(s) for a slice string
+        :raises SliceConversionError: if the item cannot be converted
         """
         try:
-            if isinstance(item, tuple) and item.count(...) > 1:
+            if isinstance(item, (tuple, list)) and sum(unit is Ellipsis for unit in item) > 1:
                 raise IndexError("An index can only have a single ellipsis ('...')")
             if isinstance(item, str):
                 return cls._str_to_slices(item)
@@ -362,11 +481,17 @@ class slice_converter(metaclass=_SliceConverter):  # noqa: N801
         >>> slice_converter["[1, :]"]
         (1, slice(None, None, None))
 
-    Index expressions with datetime and floats
-        >>> slice_converter[datetime.datetime(2023,1,1):datetime.datetime(2023,2,1), 0.1:0.9:0.05]
-        '[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`, 0.1:0.9:0.05]'
-        >>> slice_converter["[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`, 0.1:0.9:0.05]"]
-        (slice('2023-01-01T00:00:00', '2023-02-01T00:00:00', None), slice(0.1, 0.9, 0.05))
+    Index expressions with floats (e.g. a dimension with a scale)
+        >>> slice_converter[-90.0:90.0:0.5, 0.25]
+        '[-90.0:90.0:0.5, 0.25]'
+        >>> slice_converter["[-90.0:90.0:0.5, 0.25]"]
+        (slice(-90.0, 90.0, 0.5), 0.25)
+
+    Index expressions with datetime
+        >>> slice_converter[datetime.datetime(2023,1,1):datetime.datetime(2023,2,1), 5]
+        '[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`, 5]'
+        >>> slice_converter["[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`, 5]"]
+        (slice('2023-01-01T00:00:00', '2023-02-01T00:00:00', None), 5)
 
     Timezone and microseconds are also acceptable
         >>> slice_converter[datetime.datetime(2023,1,1,0,0,0,123456)]
@@ -375,6 +500,12 @@ class slice_converter(metaclass=_SliceConverter):  # noqa: N801
         '2023-01-01T00:00:00-03:30'
         >>> slice_converter['[`2023-01-01T00:00:00.123456+05:00`]']
         '2023-01-01T00:00:00.123456+05:00'
+
+    Index expressions with a duration (ISO 8601) as a step
+        >>> slice_converter[datetime.datetime(2023,1,1):datetime.datetime(2023,2,1):datetime.timedelta(hours=3)]
+        '[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`:PT3H]'
+        >>> slice_converter["[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`:-PT3H]"]
+        slice('2023-01-01T00:00:00', '2023-02-01T00:00:00', datetime.timedelta(days=-1, seconds=75600))
 
     Index expressions with strings
         >>> slice_converter["1a":"10b":"5c"]

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pytest
@@ -106,7 +106,7 @@ class TestSliceConverter:
                 (
                     slice(1686587358.317633, "2023-06-12T16:29:18.317633+00:00", -1.4),
                     -0.26,
-                    slice("mama", "mama", "+mama"),
+                    slice("mama", "-mama", "+mama"),  # labels keep their leading minus
                     slice(-1, 1, None),
                 ),
             ),
@@ -179,10 +179,197 @@ class TestSliceConverter:
     def test_slice_converter_str_to_slice_special_values(self, exp_str, exp):
         assert slice_converter[exp_str] == exp
 
-    @pytest.mark.xfail(strict=True, reason="a numeric step after two datetime bounds is silently dropped")
-    def test_slice_converter_str_to_slice_datetime_bounds_with_numeric_step(self):
-        exp_str = "[`2023-06-11T00:00:00+00:00`:`2023-06-12T00:00:00+00:00`:3]"
-        assert slice_converter[exp_str] == slice("2023-06-11T00:00:00+00:00", "2023-06-12T00:00:00+00:00", 3)
+    @pytest.mark.parametrize(
+        ("exp_str", "exp"),
+        [
+            # a numeric step after two datetime bounds
+            (
+                "[`2023-06-11T00:00:00+00:00`:`2023-06-12T00:00:00+00:00`:3]",
+                slice("2023-06-11T00:00:00+00:00", "2023-06-12T00:00:00+00:00", 3),
+            ),
+            # datetimes without escape symbols
+            ("[2023-06-11T00:00:00+00:00]", "2023-06-11T00:00:00+00:00"),
+            (
+                "[2023-06-11T00:00:00+00:00:2023-06-12T00:00:00+00:00:3]",
+                slice("2023-06-11T00:00:00+00:00", "2023-06-12T00:00:00+00:00", 3),
+            ),
+            ("[:2023-06-12T16:29:18+00:00]", slice(None, "2023-06-12T16:29:18+00:00", None)),
+            # separators inside escape symbols are not separators
+            ("[`a:b`]", "a:b"),
+            ("[`a,b`]", "a,b"),
+            ("[`a:b`:`c,d`:2]", slice("a:b", "c,d", 2)),
+            ("[`a,b`, `c:d`]", ("a,b", "c:d")),
+            ("[`1:2`, 1:2]", ("1:2", slice(1, 2, None))),
+        ],
+    )
+    def test_slice_converter_str_to_slice_escaped_separators(self, exp_str, exp):
+        assert slice_converter[exp_str] == exp
+
+    @pytest.mark.parametrize("exp_str", ["[1:2:3:4]", "[`a`:`b`:`c`:`d`]", "[1:2, 1:2:3:4]"])
+    def test_slice_converter_error_on_too_many_slice_parts(self, exp_str):
+        with pytest.raises(SliceConversionError):
+            slice_converter[exp_str]
+
+    @pytest.mark.parametrize(
+        ("exp_str", "exp"),
+        [
+            # literals: ints, floats, one unary minus; exponent/hex/underscore spellings are valid literals too
+            ("[5]", 5),
+            ("[-5]", -5),
+            ("[0.5]", 0.5),
+            ("[-0.5]", -0.5),
+            ("[1e3]", 1000.0),
+            ("[0x10]", 16),
+            ("[1_000]", 1000),
+            ("[None]", None),
+            ("[...]", ...),
+            ("[()]", ()),
+            # not literals: labels are kept as they are, minus included
+            ("[abc]", "abc"),
+            ("[-abc]", "-abc"),
+            ("[-None]", "-None"),
+            ("[-...]", "-..."),
+            ("[--1]", "--1"),
+            ("[+1]", "+1"),
+            ("[1.2.3]", "1.2.3"),
+            ("[True]", "True"),
+            ("[nan]", "nan"),
+            ("[inf]", "inf"),
+            ("[(1)]", 1),  # parentheses are not escape symbols
+            ("['abc']", "'abc'"),
+            ("[1+2j]", "1+2j"),
+            # escaped tokens are always strings
+            ("[`5`]", "5"),
+            ("[`None`]", "None"),
+            ("[`...`]", "..."),
+            ("[`2023-06-11T00:00:00+00:00`]", "2023-06-11T00:00:00+00:00"),
+            ("[`PT3H`]", "PT3H"),
+        ],
+    )
+    def test_slice_converter_str_to_slice_tokens(self, exp_str, exp):
+        assert slice_converter[exp_str] == exp
+
+    @pytest.mark.parametrize(
+        ("exp_str", "exp"),
+        [
+            ("[PT3H]", timedelta(hours=3)),
+            ("[-PT3H]", timedelta(hours=-3)),
+            ("[P1D]", timedelta(days=1)),
+            ("[P1DT12H30M]", timedelta(days=1, hours=12, minutes=30)),
+            ("[PT0.5S]", timedelta(milliseconds=500)),
+            ("[PT90M]", timedelta(minutes=90)),
+            ("[PT0S]", timedelta(0)),
+            ("[::PT3H]", slice(None, None, timedelta(hours=3))),
+            (
+                "[`2023-06-12T00:00:00+00:00`:`2023-06-11T00:00:00+00:00`:-PT3H]",
+                slice("2023-06-12T00:00:00+00:00", "2023-06-11T00:00:00+00:00", timedelta(hours=-3)),
+            ),
+            # not durations: no components, unknown units, lower case
+            ("[P]", "P"),
+            ("[PT]", "PT"),
+            ("[P1DT]", "P1DT"),
+            ("[-P]", "-P"),
+            ("[P1W]", "P1W"),
+            ("[P1M]", "P1M"),
+            ("[pt3h]", "pt3h"),
+        ],
+    )
+    def test_slice_converter_str_to_slice_durations(self, exp_str, exp):
+        assert slice_converter[exp_str] == exp
+
+    @pytest.mark.parametrize(
+        ("exp", "exp_str"),
+        [
+            (timedelta(hours=3), "[PT3H]"),
+            (timedelta(hours=-3), "[-PT3H]"),
+            (timedelta(days=1), "[P1D]"),
+            (timedelta(days=1, hours=12, minutes=30), "[P1DT12H30M]"),
+            (timedelta(milliseconds=500), "[PT0.5S]"),
+            (timedelta(seconds=1, microseconds=250), "[PT1.00025S]"),
+            (timedelta(minutes=90), "[PT1H30M]"),
+            (timedelta(0), "[PT0S]"),
+            (timedelta(days=-1, hours=-12), "[-P1DT12H]"),
+            (slice(None, None, timedelta(hours=3)), "[::PT3H]"),
+            (
+                (slice(datetime(2023, 6, 12, tzinfo=timezone.utc), None, timedelta(hours=-3)), 0),
+                "[`2023-06-12T00:00:00+00:00`::-PT3H, 0]",
+            ),
+        ],
+    )
+    def test_slice_converter_slice_to_str_durations(self, exp, exp_str):
+        assert slice_converter[exp] == exp_str
+        assert slice_converter[exp_str] == (
+            exp
+            if not isinstance(exp, tuple)
+            else tuple(
+                slice(e.start.isoformat() if isinstance(e.start, datetime) else e.start, e.stop, e.step)
+                if isinstance(e, slice)
+                else e
+                for e in exp
+            )
+        )
+
+    @pytest.mark.parametrize(
+        ("exp", "exp_str"),
+        [
+            (np.int64(361), "[361]"),
+            (np.int32(-7), "[-7]"),
+            (np.uint8(255), "[255]"),
+            (np.float64(-87.5), "[-87.5]"),
+            (np.float32(0.25), "[0.25]"),
+            ((np.int64(1), np.float64(0.5)), "[1, 0.5]"),
+            ((slice(np.int64(1), np.int64(10), np.int64(2)),), "[1:10:2]"),
+            ((slice(np.float64(-90.0), np.float64(90.0), np.float64(0.5)),), "[-90.0:90.0:0.5]"),
+            (np.datetime64("2023-06-11T10:30:15.123456789"), "[`2023-06-11T10:30:15.123456`]"),
+            (np.timedelta64(3, "h"), "[PT3H]"),
+            (np.timedelta64(1500, "ms"), "[PT1.5S]"),
+            (
+                (slice(np.datetime64("2023-06-11"), np.datetime64("2023-06-12"), np.timedelta64(6, "h")),),
+                "[`2023-06-11T00:00:00`:`2023-06-12T00:00:00`:PT6H]",
+            ),
+            ([1, slice(None, 5)], "[1, :5]"),
+            (np.index_exp[1:5, 0], "[1:5, 0]"),
+            (np.s_[::2], "[::2]"),
+            (1e20, "[1e+20]"),
+            (("NoneSuch", slice("NoneSuch", "b")), "[`NoneSuch`, `NoneSuch`:`b`]"),
+        ],
+    )
+    def test_slice_converter_slice_to_str_numpy_and_containers(self, exp, exp_str):
+        assert slice_converter[exp] == exp_str
+
+    def test_slice_converter_large_float_round_trip(self):
+        assert slice_converter["[1e+20]"] == 1e20
+
+    @pytest.mark.parametrize(
+        "index",
+        [
+            True,
+            np.bool_(True),
+            (1, False),
+            (slice(True, None),),
+            float("nan"),
+            float("inf"),
+            float("-inf"),
+            np.float32("nan"),
+            np.float64("inf"),
+            np.float16("-inf"),
+            np.longdouble("nan"),
+            (slice(np.nan, None),),
+            np.datetime64("NaT"),
+            np.timedelta64("NaT"),
+            np.array([1, 2]),
+            (np.array([1, 2]),),
+            {1, 2},
+            {"a": 1},
+            iter([1, 2]),
+            np.index_exp,
+            b"bytes",
+            (1 + 2j,),
+        ],
+    )
+    def test_slice_converter_error_on_not_representable(self, index):
+        with pytest.raises(SliceConversionError):
+            slice_converter[index]
 
     @pytest.mark.parametrize(
         "string",
