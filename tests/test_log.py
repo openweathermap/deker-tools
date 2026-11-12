@@ -29,7 +29,5 @@ def test_formatting_is_applied(caplog):
         text = "text"
         logger.debug(text)
         assert text in caplog.text
-        assert 'foo' in caplog.text
-        assert '|' in caplog.text
-
-
+        assert "foo" in caplog.text
+        assert "|" in caplog.text

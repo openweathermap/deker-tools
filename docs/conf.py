@@ -9,7 +9,6 @@
 import os
 import sys
 
-
 project = "Deker tools"
 copyright = "2023-2026, Openweather Ltd."
 author = "Openweather Ltd."

@@ -1,5 +1,5 @@
 Deker tools API
-=====
+===============
 
 .. toctree::
    :maxdepth: 4

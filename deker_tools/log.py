@@ -1,14 +1,14 @@
 import logging
 
-from typing import List, NamedTuple, Union
+from typing import NamedTuple
 
 
 class LoggerNode(NamedTuple):
     """Class describes logger node."""
 
     name: str
-    logger: Union[logging.Logger, logging.PlaceHolder]
-    children: List["LoggerNode"]
+    logger: logging.Logger | logging.PlaceHolder
+    children: list["LoggerNode"]
 
 
 def tree() -> LoggerNode:

@@ -68,6 +68,26 @@ class TestSliceConverter:
         assert slice_converter[exp] == exp_str
 
     @pytest.mark.parametrize(
+        ("exp", "exp_str"),
+        [
+            (1.5, "[1.5]"),
+            ((1.5, -2), "[1.5, -2]"),
+            (("abc",), "[`abc`]"),
+            (datetime(2023, 6, 12, 16, 29, 18, tzinfo=timezone.utc), "[`2023-06-12T16:29:18+00:00`]"),
+            (slice(1.5, 2.5, None), "[1.5:2.5]"),
+            (slice(None, None, 2), "[::2]"),
+            ((), "[()]"),
+        ],
+    )
+    def test_slice_converter_slice_to_str_special_values(self, exp, exp_str):
+        assert slice_converter[exp] == exp_str
+
+    @pytest.mark.parametrize("index", [object(), (1, object()), (("abc", 1),)])
+    def test_slice_converter_error_on_invalid_type(self, index):
+        with pytest.raises(SliceConversionError):
+            assert slice_converter[index]
+
+    @pytest.mark.parametrize(
         ("exp_str", "exp"),
         [
             ("[1]", 1),
@@ -124,6 +144,47 @@ class TestSliceConverter:
         assert slice_converter[exp_str] == exp
 
     @pytest.mark.parametrize(
+        ("exp_str", "exp"),
+        [
+            ("[`abc`]", "abc"),
+            ("[`abc`, 1]", ("abc", 1)),
+            ("[`a``b`]", "`a``b`"),
+            ("[1.5]", 1.5),
+            ("[-1.5]", -1.5),
+            ("[-1]", -1),
+            ("[None]", None),
+            ("[`None`]", "None"),
+            (
+                "[:`2023-06-12T16:29:18+00:00`]",
+                slice(None, "2023-06-12T16:29:18+00:00", None),
+            ),
+            (
+                "[`2023-06-12T16:29:18+00:00`:]",
+                slice("2023-06-12T16:29:18+00:00", None, None),
+            ),
+            (
+                "[:`2023-06-12T16:29:18+00:00`:]",
+                slice(None, "2023-06-12T16:29:18+00:00", None),
+            ),
+            (
+                "[1:`2023-06-12T16:29:18+00:00`:2]",
+                slice(1, "2023-06-12T16:29:18+00:00", 2),
+            ),
+            (
+                "[`2023-06-11T00:00:00+00:00`:`2023-06-12T00:00:00+00:00`:`2023-06-12T06:00:00+00:00`]",
+                slice("2023-06-11T00:00:00+00:00", "2023-06-12T00:00:00+00:00", "2023-06-12T06:00:00+00:00"),
+            ),
+        ],
+    )
+    def test_slice_converter_str_to_slice_special_values(self, exp_str, exp):
+        assert slice_converter[exp_str] == exp
+
+    @pytest.mark.xfail(strict=True, reason="a numeric step after two datetime bounds is silently dropped")
+    def test_slice_converter_str_to_slice_datetime_bounds_with_numeric_step(self):
+        exp_str = "[`2023-06-11T00:00:00+00:00`:`2023-06-12T00:00:00+00:00`:3]"
+        assert slice_converter[exp_str] == slice("2023-06-11T00:00:00+00:00", "2023-06-12T00:00:00+00:00", 3)
+
+    @pytest.mark.parametrize(
         "string",
         [
             "1,3,:",
@@ -153,19 +214,48 @@ class TestSliceConverter:
 
 
 @pytest.mark.parametrize(
-    ("slice_", "result"),
+    ("shape", "slice_", "result"),
     [
-        ((slice(1, None, None),), (360, 720, 4)),
-        ((slice(1, None, None), slice(1, None, None)), (360, 719, 4)),
-        ((slice(None, None, None), slice(None, None, None)), (361, 720, 4)),
-        ((slice(None, None, None), slice(None, None, None), 0), (361, 720)),
-        (0, (720, 4)),
+        ((361, 720, 4), (slice(1, None, None),), (360, 720, 4)),
+        ((361, 720, 4), (slice(1, None, None), slice(1, None, None)), (360, 719, 4)),
+        ((361, 720, 4), (slice(None, None, None), slice(None, None, None)), (361, 720, 4)),
+        ((361, 720, 4), (slice(None, None, None), slice(None, None, None), 0), (361, 720)),
+        ((361, 720, 4), 0, (720, 4)),
+        ((1,), 0, ()),
+        ((5, 5, 5), 0, (5, 5)),
+        ((5, 5, 5), (0, 0), (5,)),
+        ((5, 5, 5), ..., (5, 5, 5)),
+        ((5, 5, 5), (), (5, 5, 5)),
+        ((5, 5, 5), slice(None, None, None), (5, 5, 5)),
+        ((5, 5, 5), slice(1, 3), (2, 5, 5)),
+        ((5, 5, 5), (..., 1), (5, 5)),
+        ((5, 5, 5), (1, ...), (5, 5)),
+        ((5, 5, 5), (slice(1, 3), ..., slice(None, 2)), (2, 5, 2)),
+        ((5, 5, 5), (slice(-3, None), slice(None, -1, 1)), (3, 4, 5)),
+        ((5, 5, 5), np.index_exp[1:3, 0], (2, 5)),
     ],
 )
-def test_create_shape_from_slice(slice_, result):
-    shape = (361, 720, 4)
+def test_create_shape_from_slice(shape, slice_, result):
     new_shape = create_shape_from_slice(shape, slice_)
     assert new_shape == result
+
+
+@pytest.mark.parametrize(
+    "slice_",
+    [
+        (0, 0, 0, 0),  # too many indices
+        (slice(None, None, 2),),  # step is not 1
+        (slice(None, None, 2), 0),
+        (None, 0),  # None is not a valid index here
+        ("a",),
+        "a",
+        1.5,
+        np.index_exp,
+    ],
+)
+def test_create_shape_from_slice_raises(slice_):
+    with pytest.raises(IndexError):
+        create_shape_from_slice((5, 5, 5), slice_)
 
 
 @pytest.mark.parametrize(
@@ -175,6 +265,9 @@ def test_create_shape_from_slice(slice_, result):
         (10, slice(10), (0, 10, 1)),
         (10, slice(1, 5, 3), (1, 5, 3)),
         (2, slice(1, 5, 3), (1, 5, 3)),
+        (10, slice(-3, None), (7, 10, 1)),
+        (10, slice(None, -2), (0, 8, 1)),
+        (10, slice(-8, -2, 2), (2, 8, 2)),
     ],
 )
 def test_match_slice_size(dim_size, slice_, result):

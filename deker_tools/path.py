@@ -30,6 +30,7 @@ def is_empty(path: Pathlike) -> bool:
     """Check if directory is empty.
 
     :param path: Path to check
+    :returns: ``True`` if the directory has no entries, ``False`` otherwise
     """
     if isinstance(path, Path):
         path = str(path)

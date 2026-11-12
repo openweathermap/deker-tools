@@ -14,40 +14,45 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import builtins
 import datetime
 import re
 
-from typing import Iterable, List, Optional, Tuple, Union
+from collections.abc import Iterable
+from types import EllipsisType
+from typing import TYPE_CHECKING, TypeAlias, Union
 
 import numpy as np
 
-# numpy 2 made numpy.lib.index_tricks private; this works on numpy 1.26 and 2.x
-IndexExpression = type(np.index_exp)
+if TYPE_CHECKING:
+    # В numpy 2 made numpy.lib.index_tricks private; this works on numpy 1.26 and 2.x
+    from numpy.lib._index_tricks_impl import IndexExpression
+else:
+    # Runtime for NumPy 1.26 and 2.x
+    IndexExpression = type(np.index_exp)
+
 
 __all__ = ["match_slice_size", "create_shape_from_slice", "slice_converter", "SliceConversionError"]
 
-Slice = Union[  # type: ignore[valid-type]
-    IndexExpression, slice, type(Ellipsis), int, Tuple[Union[slice, int, type(Ellipsis), None], ...]
-]
+Slice: TypeAlias = Union[IndexExpression, slice, EllipsisType, int, tuple[Union[slice, int, EllipsisType, None], ...]]
 
-FancySlice = Union[  # type: ignore[valid-type]
+FancySlice: TypeAlias = Union[
     IndexExpression,
     slice,
-    type(Ellipsis),
+    EllipsisType,
     int,
     float,
     str,
     datetime.datetime,
-    Tuple[Union[slice, int, float, str, datetime.datetime, type(Ellipsis), None], ...],
+    tuple[Union[slice, int, float, str, datetime.datetime, EllipsisType, None], ...],
 ]
 
 
-def match_slice_size(dim_len: int, slice_: Optional[slice] = None) -> Tuple[int, int, int]:
+def match_slice_size(dim_len: int, slice_: slice | None = None) -> tuple[int, int, int]:
     """Convert slice into a sequence and get its length.
 
     :param dim_len: length of the corresponding Dimension
     :param slice_: slice to be converted
+    :returns: ``(start, stop, step)`` resolved against ``dim_len``
     """
     if slice_ is None:
         start, stop, step = 0, dim_len, 1
@@ -58,54 +63,56 @@ def match_slice_size(dim_len: int, slice_: Optional[slice] = None) -> Tuple[int,
     return start, stop, step
 
 
-# TODO: [Optimization]
 def create_shape_from_slice(
-    array_shape: Tuple[int, ...], index_exp: Slice  # type: ignore[valid-type]
-) -> Tuple[int, ...]:
+    array_shape: tuple[int, ...],
+    index_exp: Slice,
+) -> tuple[int, ...]:
     """Calculate shape of a subset from the index expression passed to __getitem__.
 
     :param array_shape: shape of the parent array
     :param index_exp: index expression passed to the array __getitem__ method
+    :returns: shape of the subset selected by ``index_exp``
     """
     if (
-        isinstance(index_exp, type(builtins.Ellipsis))
+        isinstance(index_exp, EllipsisType)
         or (isinstance(index_exp, slice) and index_exp == slice(None, None, None))
         or (isinstance(index_exp, tuple) and not index_exp)
     ):
         return array_shape
 
-    index_exp: List[Optional[slice]] = list(np.index_exp[index_exp])  # type: ignore[arg-type]
+    # the same normalisation ``np.index_exp[...]`` does: a tuple stays as is, a single index becomes a 1-tuple
+    expressions: list[slice | int | EllipsisType | None]
+    if isinstance(index_exp, tuple):
+        expressions = list(index_exp)
+    elif isinstance(index_exp, (slice, int)):
+        expressions = [index_exp]
+    else:
+        raise IndexError(f"Only integers, slices, ellipsis and tuples of them are valid indices, got {index_exp!r}")
 
-    len_item: int = len(index_exp)
+    len_item: int = len(expressions)
     len_shape: int = len(array_shape)
 
     if len_item > len_shape:
         raise IndexError(f"Too many indices for array: array is {len_shape}-dimensional, but {len_item} were indexed")
 
-    if len_item < len_shape:
-        for _ in range(len_shape - len_item):
-            index_exp.append(slice(None, None, None))
+    expressions.extend(slice(None, None, None) for _ in range(len_shape - len_item))
 
-    exclude: List[int] = []
-    if all(isinstance(i, (slice, type(builtins.Ellipsis), int)) for i in index_exp):
-        for n, i in enumerate(index_exp):  # type: ignore[arg-type]
-            if isinstance(i, slice) and i.step is not None and i.step != 1:
+    normalized: list[slice | None] = []
+    for exp in expressions:
+        if isinstance(exp, slice):
+            if exp.step is not None and exp.step != 1:
                 raise IndexError("step should be equal to 1")
-            if isinstance(i, type(builtins.Ellipsis)):
-                index_exp[n] = slice(None, None, None)
-            if isinstance(i, int):
-                exclude.append(n)
-        if exclude:
-            exclude.sort()
-            exclude.reverse()
-            for p in exclude:
-                index_exp[p] = None  # type: ignore[union-attr, index]
-    del exclude
-    shape = tuple(
-        len(tuple(range(*match_slice_size(array_shape[i], exp)))) for i, exp in enumerate(index_exp) if exp is not None
-    )
+            normalized.append(exp)
+        elif isinstance(exp, EllipsisType):
+            normalized.append(slice(None, None, None))
+        elif isinstance(exp, int):
+            normalized.append(None)  # an integer index removes the dimension
+        else:
+            raise IndexError(f"Only integers, slices and ellipsis are valid indices, got {exp!r}")
 
-    return shape
+    return tuple(
+        len(range(*match_slice_size(array_shape[i], exp))) for i, exp in enumerate(normalized) if exp is not None
+    )
 
 
 class SliceConversionError(Exception):
@@ -124,6 +131,7 @@ class _StringEscape(type):
         """Enclose string with escape symbols.
 
         :param string: string to be wrapped
+        :returns: string enclosed in escape symbols
         """
         return f"{cls._string_escape}{string}{cls._string_escape}"
 
@@ -132,6 +140,7 @@ class _StringEscape(type):
         """Check if string is wrapped with escape symbols.
 
         :param string: string to be checked
+        :returns: ``True`` if the string starts and ends with the escape symbol
         """
         return string.startswith(cls._string_escape) and string.endswith(cls._string_escape)
 
@@ -140,6 +149,7 @@ class _StringEscape(type):
         """Disclose string from escape symbols.
 
         :param string: string to be unwrapped
+        :returns: string without the enclosing escape symbols
         """
         return string.strip(cls._string_escape)
 
@@ -152,10 +162,11 @@ class _StringToSliceMixin(type, metaclass=_StringEscape):
     _isostring_regex = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?((\+|-)(\d{2}:\d{2}))?)")
 
     @classmethod
-    def _process_string(cls, string: str) -> Optional[Union[int, float, str, slice]]:
+    def _process_string(cls, string: str) -> int | float | str | slice | EllipsisType | tuple[()] | None:
         """Validate and get value from string.
 
         :param string: string to be processed
+        :returns: ``None``, ``Ellipsis``, a number, a datetime slice or the string itself
         """
         string = string.strip()
         str_for_check = string
@@ -166,9 +177,9 @@ class _StringToSliceMixin(type, metaclass=_StringEscape):
 
         # check if string is None or ...
         if str_for_check in cls._str_to_slice:
-            return cls._str_to_slice[string]  # type: ignore[return-value]
+            return cls._str_to_slice[string]
 
-        # check if string is empty
+        # check if string is still empty
         if str_for_check is False or str_for_check.isspace():
             return None
 
@@ -193,6 +204,7 @@ class _StringToSliceMixin(type, metaclass=_StringEscape):
         """Convert a slice string to a slice object.
 
         :param slice_string: slice string to convert
+        :returns: slice built from the ``start:stop:step`` parts of the string
         """
         slice_parameters = []
         for i in slice_string.split(":"):
@@ -201,11 +213,12 @@ class _StringToSliceMixin(type, metaclass=_StringEscape):
         return slice(*slice_parameters)
 
     @classmethod
-    def _parse_datetime(cls, slice_string: str, match_list: list) -> Union[slice, str]:
+    def _parse_datetime(cls, slice_string: str, match_list: list) -> slice | str:
         """Parse datetime isostrings and convert them to a slice object.
 
         :param slice_string: initial slice string to convert
         :param match_list: list of matched datetime isostrings to convert
+        :returns: slice of datetime isostrings, or the single isostring if there is no range
         """
         slice_string = slice_string.replace(cls._string_escape, "").strip()
         slice_parameters = [i[0] for i in match_list if i]
@@ -231,10 +244,11 @@ class _StringToSliceMixin(type, metaclass=_StringEscape):
         return slice(*slice_parameters)
 
     @classmethod
-    def _str_to_slices(cls, slice_: str) -> FancySlice:  # type: ignore[valid-type]
+    def _str_to_slices(cls, slice_: str) -> FancySlice:
         """Convert a slice string to a list of slices.
 
         :param slice_: string to convert
+        :returns: slice, int or a tuple of them, parsed from the string
         """
         # split the input string into slice strings and convert each one to a slice object
         if not slice_.startswith("[") or not slice_.endswith("]"):
@@ -252,14 +266,14 @@ class _StringToSliceMixin(type, metaclass=_StringEscape):
             if ":" in slice_str:
                 match = re.findall(cls._isostring_regex, slice_str)
                 if match:  # dimension represents datetime
-                    pos = cls._parse_datetime(slice_str, match)  # type: ignore[assignment]
+                    pos = cls._parse_datetime(slice_str, match)
                 else:  # all other dimensions represent any other values except time
-                    pos = cls._convert_str_to_slice(slice_str)  # type: ignore[assignment]
+                    pos = cls._convert_str_to_slice(slice_str)
             else:
-                pos = cls._process_string(slice_str)  # type: ignore[assignment]
+                pos = cls._process_string(slice_str)
             res.append(pos)
 
-        return tuple(res) if len(res) != 1 else res[0]  # type: ignore[no-any-return]
+        return tuple(res) if len(res) != 1 else res[0]
 
 
 class _SliceToStringMixin(type, metaclass=_StringEscape):
@@ -269,16 +283,18 @@ class _SliceToStringMixin(type, metaclass=_StringEscape):
     _slice_to_str = {None: ":", ...: "...", (): "()"}
 
     @classmethod
-    def _slices_to_str(cls, slice_: Optional[FancySlice]) -> str:  # type: ignore[valid-type]
+    def _slices_to_str(cls, slice_: FancySlice | None) -> str:
         """Convert a slice object(s) to a slice string.
 
         :param slice_: slice or slices tuple to convert
+        :returns: slice string enclosed in square brackets
         """
 
-        def convert_slice(_slice_: Optional[FancySlice]) -> str:  # type: ignore[valid-type]
+        def convert_slice(_slice_: FancySlice | None) -> str:
             """Convert a slice object to a slice string.
 
             :param _slice_: slice to convert
+            :returns: string representation of one slice element
             """
             if _slice_ is None or _slice_ is Ellipsis:
                 return cls._slice_to_str[_slice_]
@@ -311,7 +327,7 @@ class _SliceToStringMixin(type, metaclass=_StringEscape):
             return f"[{cls._slice_to_str[slice_]}]"
 
         if isinstance(slice_, Iterable):
-            slice_strs = [convert_slice(sl) for sl in slice_]  # type: ignore[attr-defined]
+            slice_strs = [convert_slice(sl) for sl in slice_]
             return f"[{', '.join(slice_strs)}]"
         return f"[{convert_slice(slice_)}]"
 
@@ -319,10 +335,11 @@ class _SliceToStringMixin(type, metaclass=_StringEscape):
 class _SliceConverter(_SliceToStringMixin, _StringToSliceMixin):
     """Converts slices to string and vice versa. Check slice_converter class for interface."""
 
-    def __getitem__(cls, item: Union[FancySlice, str]) -> Union[str, FancySlice]:  # type: ignore[valid-type]
+    def __getitem__(cls, item: FancySlice | str) -> str | FancySlice:
         """Call slices_to_str or str_to_slices depending on item type.
 
         :param item: item to convert
+        :returns: slice string for a slice object, or slice object(s) for a slice string
         """
         try:
             if isinstance(item, tuple) and item.count(...) > 1:
@@ -334,7 +351,7 @@ class _SliceConverter(_SliceToStringMixin, _StringToSliceMixin):
             raise SliceConversionError(e)
 
 
-class slice_converter(object, metaclass=_SliceConverter):  # noqa: N801
+class slice_converter(metaclass=_SliceConverter):  # noqa: N801
     """Converts slices to string and vice versa.
 
     Standard index expressions

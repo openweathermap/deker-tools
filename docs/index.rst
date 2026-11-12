@@ -1,7 +1,8 @@
 Deker Tools
 ===========
 
-Deker Tools is a collection of utility functions and classes designed to assist in common data processing tasks. It consists of modules that handle data conversion, path validation, and slice manipulation.
+Deker Tools is a collection of utility functions and classes designed to assist in common data processing tasks.
+It consists of modules that handle data conversion, path validation, and slice manipulation.
 
 data
 ----
