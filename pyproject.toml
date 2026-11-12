@@ -231,9 +231,12 @@ skips = ["B324"]
 # https://pypi.org/project/pytest-sugar/
 minversion = 7.0
 asyncio_mode = "auto"
-addopts = ["--ignore=tmp.py"]
+addopts = [
+    "--ignore=tmp.py",
+    "--doctest-modules"
+]
 norecursedirs = "data"
-testpaths = "./tests"
+testpaths = ["./tests", "deker_tools"]
 
 #log_cli = true
 #log_cli_level = "DEBUG"

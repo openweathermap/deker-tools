@@ -62,15 +62,13 @@ def match_slice_size(dim_len: int, slice_: slice | None = None) -> tuple[int, in
 
     :param dim_len: length of the corresponding Dimension
     :param slice_: slice to be converted
-    :returns: ``(start, stop, step)`` resolved against ``dim_len``
+    :returns: ``(start, stop, step)`` resolved against ``dim_len`` exactly as Python does for ``range``:
+      ``None`` and negative bounds are resolved with the sign of the step in mind, bounds are clipped to the dimension
+    :raises ValueError: if the step is zero
     """
     if slice_ is None:
-        start, stop, step = 0, dim_len, 1
-    else:
-        start = 0 if slice_.start is None else (slice_.start if slice_.start >= 0 else dim_len + slice_.start)
-        stop = dim_len if slice_.stop is None else (slice_.stop if slice_.stop >= 0 else dim_len + slice_.stop)
-        step = 1 if slice_.step is None else slice_.step
-    return start, stop, step
+        return 0, dim_len, 1
+    return slice_.indices(dim_len)
 
 
 def create_shape_from_slice(
@@ -110,8 +108,8 @@ def create_shape_from_slice(
     normalized: list[slice | None] = []
     for exp in expressions:
         if isinstance(exp, slice):
-            if exp.step is not None and exp.step != 1:
-                raise IndexError("step should be equal to 1")
+            if exp.step == 0:
+                raise IndexError("slice step cannot be zero")
             normalized.append(exp)
         elif isinstance(exp, EllipsisType):
             normalized.append(slice(None, None, None))
@@ -507,17 +505,15 @@ class slice_converter(metaclass=_SliceConverter):  # noqa: N801
         >>> slice_converter["[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`:-PT3H]"]
         slice('2023-01-01T00:00:00', '2023-02-01T00:00:00', datetime.timedelta(days=-1, seconds=75600))
 
-    Index expressions with strings
-        >>> slice_converter["1a":"10b":"5c"]
-        '[`1a`:`10b`:`5c`]'
-        >>> slice_converter['[1a:10b:5c]']
-        slice('1a', '10b', '5c')
-        >>> slice_converter["1":"10":"5.2"]
-        '[`1`:`10`:`5.2`]'
-        >>> slice_converter["1", "10", "5.2"]
-        '[`1`, `10`, `5.2`]'
-        >>> slice_converter['[`1`, `10`, `5.2`]']
-        ('1', '10', '5.2')
-        >>> slice_converter['[`1`:`10`:`5.2`]']
-        slice('1', '10', '5.2')
+    Index expressions with labels (strings)
+        >>> slice_converter["temperature":"humidity":2, "pressure"]
+        '[`temperature`:`humidity`:2, `pressure`]'
+        >>> slice_converter['[`temperature`:`humidity`:2, `pressure`]']
+        (slice('temperature', 'humidity', 2), 'pressure')
+
+    Quotes are optional for reading, unless the label looks like a number, a datetime or a keyword
+        >>> slice_converter['[temperature:humidity:2, pressure]']
+        (slice('temperature', 'humidity', 2), 'pressure')
+        >>> slice_converter['[`10`, 10]']
+        ('10', 10)
     """

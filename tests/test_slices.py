@@ -420,6 +420,15 @@ class TestSliceConverter:
         ((5, 5, 5), (slice(1, 3), ..., slice(None, 2)), (2, 5, 2)),
         ((5, 5, 5), (slice(-3, None), slice(None, -1, 1)), (3, 4, 5)),
         ((5, 5, 5), np.index_exp[1:3, 0], (2, 5)),
+        # steps: positive, negative, larger than the dimension, mixed
+        ((10,), slice(None, None, 2), (5,)),
+        ((10,), slice(1, None, 3), (3,)),
+        ((10,), slice(None, None, -1), (10,)),
+        ((10,), slice(8, 1, -3), (3,)),
+        ((10,), slice(None, None, 100), (1,)),
+        ((10,), slice(None, None, -100), (1,)),
+        ((10, 5, 4), (slice(None, None, 2), slice(None, None, -2), 1), (5, 3)),
+        ((361, 720), (slice(None, None, 4), slice(None, None, 4)), (91, 180)),
     ],
 )
 def test_create_shape_from_slice(shape, slice_, result):
@@ -431,8 +440,8 @@ def test_create_shape_from_slice(shape, slice_, result):
     "slice_",
     [
         (0, 0, 0, 0),  # too many indices
-        (slice(None, None, 2),),  # step is not 1
-        (slice(None, None, 2), 0),
+        (slice(None, None, 0),),  # zero step
+        (slice(None, None, 0), 0),
         (None, 0),  # None is not a valid index here
         ("a",),
         "a",
@@ -451,14 +460,25 @@ def test_create_shape_from_slice_raises(slice_):
         (10, None, (0, 10, 1)),
         (10, slice(10), (0, 10, 1)),
         (10, slice(1, 5, 3), (1, 5, 3)),
-        (2, slice(1, 5, 3), (1, 5, 3)),
+        (2, slice(1, 5, 3), (1, 2, 3)),  # bounds are clipped to the dimension, as range() would get them
         (10, slice(-3, None), (7, 10, 1)),
         (10, slice(None, -2), (0, 8, 1)),
         (10, slice(-8, -2, 2), (2, 8, 2)),
+        # negative step: None means "from the end" / "past the beginning"
+        (10, slice(None, None, -1), (9, -1, -1)),
+        (10, slice(8, 1, -3), (8, 1, -3)),
+        (10, slice(None, 2, -2), (9, 2, -2)),
+        (10, slice(-1, None, -1), (9, -1, -1)),
+        (10, slice(100, None, -1), (9, -1, -1)),
     ],
 )
 def test_match_slice_size(dim_size, slice_, result):
     assert match_slice_size(dim_size, slice_) == result
+
+
+def test_match_slice_size_zero_step():
+    with pytest.raises(ValueError, match="step"):
+        match_slice_size(10, slice(None, None, 0))
 
 
 if __name__ == "__main__":
