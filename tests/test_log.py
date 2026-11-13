@@ -1,12 +1,13 @@
 import logging
+
 from logging import getLogger
 
-from deker_tools.log import tree, LoggerNode, set_logger
+from deker_tools.log import LoggerNode, set_logger, tree
 
 
 def test_tree():
     logger_name = "test"
-    logger = getLogger(logger_name)
+    getLogger(logger_name)  # registers the logger in the tree
     logger_tree = tree()
 
     def check_node(node: LoggerNode):

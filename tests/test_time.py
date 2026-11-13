@@ -5,7 +5,6 @@ import pytest
 
 from deker_tools.time import get_utc
 
-
 UTC_DT = datetime(2026, 11, 12, 10, 30, 15, 123456, tzinfo=timezone.utc)
 
 

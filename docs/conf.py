@@ -115,5 +115,5 @@ html_theme_options = {
 }
 
 intersphinx_mapping = {
-    "deker": ("http://de1.owm.io:10000", None),
+    "deker": ("https://docs.deker.io", None),
 }
