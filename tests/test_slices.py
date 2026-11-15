@@ -3,7 +3,14 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pytest
 
-from deker_tools.slices import SliceConversionError, create_shape_from_slice, match_slice_size, slice_converter
+from deker_tools.slices import (
+    SliceConversionError,
+    create_shape_from_slice,
+    expand_index_exp,
+    match_slice_size,
+    positive_bounds,
+    slice_converter,
+)
 
 
 class TestSliceConverter:
@@ -429,6 +436,15 @@ class TestSliceConverter:
         ((10,), slice(None, None, -100), (1,)),
         ((10, 5, 4), (slice(None, None, 2), slice(None, None, -2), 1), (5, 3)),
         ((361, 720), (slice(None, None, 4), slice(None, None, 4)), (91, 180)),
+        # an ellipsis stands for every axis the other indices leave out, wherever it is
+        ((3, 4, 5, 6), (..., 0), (3, 4, 5)),
+        ((3, 4, 5, 6), (0, ...), (4, 5, 6)),
+        ((3, 4, 5, 6), (0, ..., 0), (4, 5)),
+        ((3, 4, 5, 6), (..., slice(None, None, -2)), (3, 4, 5, 3)),
+        ((3, 4, 5, 6), (slice(None, None, 2), ..., 1), (2, 4, 5)),
+        ((3, 4, 5, 6), (0, 1, 2, ...), (6,)),
+        ((3, 4, 5, 6), (0, 1, 2, 3, ...), ()),
+        ((3, 4, 5, 6), (..., 0, 1, 2, 3), ()),
     ],
 )
 def test_create_shape_from_slice(shape, slice_, result):
@@ -440,6 +456,8 @@ def test_create_shape_from_slice(shape, slice_, result):
     "slice_",
     [
         (0, 0, 0, 0),  # too many indices
+        (..., 0, 0, 0, 0),  # too many indices beside an ellipsis
+        (..., 0, ...),  # two ellipses
         (slice(None, None, 0),),  # zero step
         (slice(None, None, 0), 0),
         (None, 0),  # None is not a valid index here
@@ -483,3 +501,75 @@ def test_match_slice_size_zero_step():
 
 if __name__ == "__main__":
     pytest.main()
+
+
+@pytest.mark.parametrize(
+    ("shape", "index_exp", "expected"),
+    [
+        ((5,), 0, (0,)),
+        ((5,), slice(1, 3), (slice(1, 3),)),
+        ((5, 5), ..., (slice(None), slice(None))),
+        ((5, 5), (), (slice(None), slice(None))),
+        ((5, 5), 0, (0, slice(None))),
+        ((5, 5), (..., 0), (slice(None), 0)),
+        ((5, 5, 5), (0, ...), (0, slice(None), slice(None))),
+        ((5, 5, 5), (0, ..., -1), (0, slice(None), -1)),
+        ((5, 5, 5), (slice(None, None, -2), ...), (slice(None, None, -2), slice(None), slice(None))),
+        ((5, 5, 5), (0, 1, 2, ...), (0, 1, 2)),
+    ],
+)
+def test_expand_index_exp(shape, index_exp, expected):
+    assert expand_index_exp(shape, index_exp) == expected
+
+
+@pytest.mark.parametrize(
+    "index_exp",
+    [(0, 0, 0, 0), (..., 0, 0, 0, 0), (..., 0, ...), (None,), ("a",), 1.5, (True,), (slice(None), False)],
+)
+def test_expand_index_exp_raises(index_exp):
+    with pytest.raises(IndexError):
+        expand_index_exp((5, 5, 5), index_exp)
+
+
+@pytest.mark.parametrize(
+    ("shape", "index_exp", "forward", "flipped"),
+    [
+        ((10,), slice(None), (slice(None),), ()),
+        ((10,), slice(None, None, 2), (slice(None, None, 2),), ()),
+        ((10,), slice(None, None, -1), (slice(0, 10, 1),), (0,)),
+        ((10,), slice(None, None, -2), (slice(1, 10, 2),), (0,)),
+        ((10,), slice(8, 2, -2), (slice(4, 9, 2),), (0,)),
+        ((10,), slice(-1, None, -3), (slice(0, 10, 3),), (0,)),
+        ((10,), slice(2, 8, -1), (slice(0, 0),), ()),  # nothing is selected
+        ((10, 10), (3, slice(None, None, -3)), (3, slice(0, 10, 3)), (0,)),  # the integer drops the first axis
+        ((10, 10), (slice(None, None, -1), 3), (slice(0, 10, 1), 3), (0,)),
+        ((4, 5, 6), (..., slice(None, None, -2)), (slice(None), slice(None), slice(1, 6, 2)), (2,)),
+        (
+            (4, 5, 6),
+            (slice(None, None, -1), 2, slice(4, 0, -1)),
+            (slice(0, 4, 1), 2, slice(1, 5, 1)),
+            (0, 1),
+        ),
+    ],
+)
+def test_positive_bounds(shape, index_exp, forward, flipped):
+    assert positive_bounds(shape, index_exp) == (forward, flipped)
+
+
+@pytest.mark.parametrize(
+    ("shape", "index_exp"),
+    [
+        ((10,), np.index_exp[::-1]),
+        ((10,), np.index_exp[8:2:-2]),
+        ((10, 10), np.index_exp[::-1, ::2]),
+        ((10, 10), np.index_exp[3, ::-3]),
+        ((4, 5, 6), np.index_exp[::-1, 2, 4:0:-1]),
+        ((4, 5, 6), np.index_exp[..., ::-2]),
+        ((3, 4, 5, 6), np.index_exp[-1::-2, ::-1, 3:0:-1, ::-3]),
+    ],
+)
+def test_positive_bounds_select_the_same_cells_reversed(shape, index_exp):
+    """The forward twin, flipped along the reported axes, is exactly the numpy selection."""
+    data = np.arange(np.prod(shape)).reshape(shape)
+    forward, flipped = positive_bounds(shape, index_exp)
+    assert np.array_equal(np.flip(data[forward], flipped), data[index_exp])

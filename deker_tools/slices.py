@@ -97,13 +97,22 @@ def create_shape_from_slice(
     else:
         raise IndexError(f"Only integers, slices, ellipsis and tuples of them are valid indices, got {index_exp!r}")
 
-    len_item: int = len(expressions)
     len_shape: int = len(array_shape)
+    ellipses = sum(isinstance(exp, EllipsisType) for exp in expressions)
+    if ellipses > 1:
+        raise IndexError("an index can only have a single ellipsis ('...')")
+    len_item: int = len(expressions) - ellipses
 
     if len_item > len_shape:
         raise IndexError(f"Too many indices for array: array is {len_shape}-dimensional, but {len_item} were indexed")
 
-    expressions.extend(slice(None, None, None) for _ in range(len_shape - len_item))
+    # an ellipsis stands for every axis the other indices leave out, as in numpy; without one they go to the end
+    whole_axes = [slice(None, None, None) for _ in range(len_shape - len_item)]
+    if ellipses:
+        position = next(i for i, exp in enumerate(expressions) if isinstance(exp, EllipsisType))
+        expressions[position : position + 1] = whole_axes
+    else:
+        expressions.extend(whole_axes)
 
     normalized: list[slice | None] = []
     for exp in expressions:
@@ -111,8 +120,6 @@ def create_shape_from_slice(
             if exp.step == 0:
                 raise IndexError("slice step cannot be zero")
             normalized.append(exp)
-        elif isinstance(exp, EllipsisType):
-            normalized.append(slice(None, None, None))
         elif isinstance(exp, int):
             normalized.append(None)  # an integer index removes the dimension
         else:
@@ -121,6 +128,73 @@ def create_shape_from_slice(
     return tuple(
         len(range(*match_slice_size(array_shape[i], exp))) for i, exp in enumerate(normalized) if exp is not None
     )
+
+
+def expand_index_exp(array_shape: tuple[int, ...], index_exp: Slice) -> tuple[slice | int, ...]:
+    """Expand an index expression to one slice or index per axis of the array.
+
+    A single index becomes a 1-tuple, an ellipsis stands for every axis the other indices leave out and the axes
+    left out without an ellipsis are taken whole, as in numpy. Nothing else is changed: negative indices
+    and slice defaults stay as they are.
+
+    :param array_shape: shape of the array
+    :param index_exp: index expression passed to the array ``__getitem__`` method
+    :returns: one slice or integer per axis
+    :raises IndexError: if there are too many indices or more than one ellipsis
+    """
+    raw: tuple = index_exp if isinstance(index_exp, tuple) else (index_exp,)
+    items: list[slice | int | EllipsisType] = []
+    for item in raw:
+        if not isinstance(item, (slice, int, EllipsisType)) or isinstance(item, bool):
+            raise IndexError(f"Only integers, slices and ellipsis are valid indices, got {item!r}")
+        items.append(item)
+
+    ellipses = sum(isinstance(item, EllipsisType) for item in items)
+    if ellipses > 1:
+        raise IndexError("an index can only have a single ellipsis ('...')")
+    given = len(items) - ellipses
+    if given > len(array_shape):
+        raise IndexError(
+            f"Too many indices for array: array is {len(array_shape)}-dimensional, but {given} were indexed"
+        )
+    whole_axes: list[slice | int | EllipsisType] = [slice(None, None, None) for _ in range(len(array_shape) - given)]
+    if ellipses:
+        position = next(i for i, item in enumerate(items) if isinstance(item, EllipsisType))
+        items[position : position + 1] = whole_axes
+    else:
+        items.extend(whole_axes)
+    return tuple(item for item in items if not isinstance(item, EllipsisType))
+
+
+def positive_bounds(array_shape: tuple[int, ...], index_exp: Slice) -> tuple[tuple[slice | int, ...], tuple[int, ...]]:
+    """Replace every slice with a negative step by the slice that selects the same cells forwards.
+
+    A slice with a negative step selects the same cells as its forward twin, in the reversed order. Storages
+    that select forwards only (HDF5 hyperslabs, for one) read the twin and flip the data along the axis;
+    the data to write is flipped the same way first.
+
+    :param array_shape: shape of the array
+    :param index_exp: index expression passed to the array ``__getitem__`` method
+    :returns: the forward index expression, one slice or index per axis, and the axes of the selected data
+        (an integer index drops its axis) that have to be flipped
+    """
+    forward: list[slice | int] = []
+    flipped_axes: list[int] = []
+    data_axis = 0
+    for size, item in zip(array_shape, expand_index_exp(array_shape, index_exp)):
+        if isinstance(item, slice) and item.step is not None and item.step < 0:
+            start, stop, step = item.indices(size)
+            selected = range(start, stop, step)
+            if selected:
+                forward.append(slice(selected[-1], selected[0] + 1, -step))
+                flipped_axes.append(data_axis)
+            else:
+                forward.append(slice(0, 0))
+        else:
+            forward.append(item)
+        if isinstance(item, slice):
+            data_axis += 1
+    return tuple(forward), tuple(flipped_axes)
 
 
 class SliceConversionError(Exception):
