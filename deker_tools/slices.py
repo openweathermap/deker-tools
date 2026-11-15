@@ -22,21 +22,21 @@ import re
 
 from collections.abc import Iterable
 from types import EllipsisType
-from typing import TYPE_CHECKING, TypeAlias, Union
+from typing import TypeAlias, Union
 
 import numpy as np
 
-if TYPE_CHECKING:
-    # В numpy 2 made numpy.lib.index_tricks private; this works on numpy 1.26 and 2.x
-    from numpy.lib._index_tricks_impl import IndexExpression
-else:
-    # Runtime for NumPy 1.26 and 2.x
-    IndexExpression = type(np.index_exp)
+__all__ = [
+    "match_slice_size",
+    "create_shape_from_slice",
+    "slice_converter",
+    "slices_to_str",
+    "str_to_slices",
+    "SliceConversionError",
+]
 
-
-__all__ = ["match_slice_size", "create_shape_from_slice", "slice_converter", "SliceConversionError"]
-
-Slice: TypeAlias = Union[IndexExpression, slice, EllipsisType, int, tuple[Union[slice, int, EllipsisType, None], ...]]
+# what ``np.index_exp[...]`` produces: a single index or a tuple of them
+Slice: TypeAlias = Union[slice, EllipsisType, int, tuple[Union[slice, int, EllipsisType, None], ...]]
 
 # one unit of an index expression as the string form reads it
 SliceUnit: TypeAlias = Union[int, float, str, datetime.datetime, datetime.timedelta, EllipsisType, tuple[()], None]
@@ -44,7 +44,6 @@ SliceUnit: TypeAlias = Union[int, float, str, datetime.datetime, datetime.timede
 SliceUnitInput: TypeAlias = Union[SliceUnit, np.integer, np.floating, np.datetime64, np.timedelta64]
 
 FancySlice: TypeAlias = Union[
-    IndexExpression,
     slice,
     SliceUnit,
     tuple[Union[slice, SliceUnit], ...],
@@ -532,14 +531,37 @@ class _SliceConverter(_SliceToStringMixin, _StringToSliceMixin):
         :returns: slice string for a slice object, or slice object(s) for a slice string
         :raises SliceConversionError: if the item cannot be converted
         """
-        try:
-            if isinstance(item, (tuple, list)) and sum(unit is Ellipsis for unit in item) > 1:
-                raise IndexError("An index can only have a single ellipsis ('...')")
-            if isinstance(item, str):
-                return cls._str_to_slices(item)
-            return cls._slices_to_str(item)
-        except Exception as e:
-            raise SliceConversionError(e)
+        if isinstance(item, str):
+            return str_to_slices(item)
+        return slices_to_str(item)
+
+
+def slices_to_str(slice_: FancySliceInput) -> str:
+    """Convert an index expression to its string form, the same way ``slice_converter[...]`` does.
+
+    :param slice_: value, slice, or a tuple/list of values and slices
+    :returns: slice string enclosed in square brackets
+    :raises SliceConversionError: if the expression cannot be converted
+    """
+    try:
+        if isinstance(slice_, (tuple, list)) and sum(unit is Ellipsis for unit in slice_) > 1:
+            raise IndexError("An index can only have a single ellipsis ('...')")
+        return _SliceConverter._slices_to_str(slice_)
+    except Exception as e:
+        raise SliceConversionError(e)
+
+
+def str_to_slices(string: str) -> FancySlice:
+    """Convert a slice string back to an index expression, the same way ``slice_converter["..."]`` does.
+
+    :param string: slice string enclosed in square brackets
+    :returns: a single index or a tuple of them
+    :raises SliceConversionError: if the string cannot be parsed
+    """
+    try:
+        return _SliceConverter._str_to_slices(string)
+    except Exception as e:
+        raise SliceConversionError(e)
 
 
 class slice_converter(metaclass=_SliceConverter):  # noqa: N801

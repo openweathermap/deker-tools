@@ -10,6 +10,8 @@ from deker_tools.slices import (
     match_slice_size,
     positive_bounds,
     slice_converter,
+    slices_to_str,
+    str_to_slices,
 )
 
 
@@ -405,6 +407,131 @@ class TestSliceConverter:
     def test_slice_converter_error_on_index(self, index):
         with pytest.raises(SliceConversionError):
             assert slice_converter[index]
+
+
+class TestConverterFunctions:
+    """``slices_to_str`` and ``str_to_slices`` are the typed equivalents of ``slice_converter[...]``."""
+
+    @pytest.mark.parametrize(
+        ("exp", "exp_str"),
+        [
+            (1, "[1]"),
+            (-1, "[-1]"),
+            (1.5, "[1.5]"),
+            (None, "[:]"),
+            (..., "[...]"),
+            ((), "[()]"),
+            ("abc", "[`abc`]"),
+            (slice(None, None, None), "[:]"),
+            (slice(1, 1, 1), "[1:1:1]"),
+            (slice(None, None, -2), "[::-2]"),
+            (slice(1.5, 2.5, None), "[1.5:2.5]"),
+            (slice("a", "b", 2), "[`a`:`b`:2]"),
+            (np.int64(3), "[3]"),
+            ([1, slice(None, 2, None)], "[1, :2]"),
+            ((-1, 0, 1), "[-1, 0, 1]"),
+            ((slice(None, None, None), 1, ..., slice(None, None, 4)), "[:, 1, ..., ::4]"),
+            (datetime(2023, 6, 12, 16, 29, 18, tzinfo=timezone.utc), "[`2023-06-12T16:29:18+00:00`]"),
+            (
+                slice(datetime(2023, 1, 1), datetime(2023, 2, 1), timedelta(hours=3)),
+                "[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`:PT3H]",
+            ),
+        ],
+    )
+    def test_slices_to_str(self, exp, exp_str):
+        assert slices_to_str(exp) == exp_str
+        if not isinstance(exp, str):
+            assert slices_to_str(exp) == slice_converter[exp]
+
+    def test_slices_to_str_takes_a_bare_string_as_a_label(self):
+        # ``slice_converter["abc"]`` parses the string; the typed function has no such ambiguity
+        assert slices_to_str("abc") == "[`abc`]"
+        with pytest.raises(SliceConversionError):
+            slice_converter["abc"]
+
+    @pytest.mark.parametrize(
+        ("exp_str", "exp"),
+        [
+            ("[1]", 1),
+            ("[-1]", -1),
+            ("[1.5]", 1.5),
+            ("[:]", slice(None, None, None)),
+            ("[...]", ...),
+            ("[()]", ()),
+            ("[`abc`]", "abc"),
+            ("[abc]", "abc"),
+            ("[`10`, 10]", ("10", 10)),
+            ("[1:1:1]", slice(1, 1, 1)),
+            ("[::-2]", slice(None, None, -2)),
+            ("[1.5:2.5]", slice(1.5, 2.5, None)),
+            ("[`a`:`b`:2]", slice("a", "b", 2)),
+            ("[1, :2]", (1, slice(None, 2, None))),
+            ("[-1, 0, 1]", (-1, 0, 1)),
+            ("[:, 1, ..., ::4]", (slice(None, None, None), 1, ..., slice(None, None, 4))),
+            ("[`2023-06-12T16:29:18+00:00`]", "2023-06-12T16:29:18+00:00"),
+            (
+                "[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`:-PT3H]",
+                slice("2023-01-01T00:00:00", "2023-02-01T00:00:00", timedelta(hours=-3)),
+            ),
+        ],
+    )
+    def test_str_to_slices(self, exp_str, exp):
+        assert str_to_slices(exp_str) == exp
+        assert str_to_slices(exp_str) == slice_converter[exp_str]
+
+    @pytest.mark.parametrize(
+        "exp",
+        [
+            1,
+            1.5,
+            ...,
+            (),
+            "abc",
+            slice(None, None, None),
+            slice(1.5, 2.5, -1),
+            (-1, 0, 1),
+            (slice(None, None, None), 1, ..., slice(None, None, 4)),
+            (slice("a", "b", 2), "c"),
+        ],
+    )
+    def test_functions_round_trip(self, exp):
+        assert str_to_slices(slices_to_str(exp)) == exp
+
+    @pytest.mark.parametrize(
+        "index",
+        [
+            object(),
+            (1, object()),
+            (("abc", 1),),
+            {1, 2},
+            (..., ...),
+            (..., 0.52, slice(1, 8, 5), ...),
+        ],
+    )
+    def test_slices_to_str_error(self, index):
+        with pytest.raises(SliceConversionError):
+            slices_to_str(index)
+
+    @pytest.mark.parametrize(
+        "string",
+        [
+            "1,3,:",
+            "hello, world",
+            "",
+            " ",
+            "[]",
+            "[ ]",
+            "()",
+            "[1:2:3:4]",
+            1,
+            None,
+            (1, 2),
+            b"[1]",
+        ],
+    )
+    def test_str_to_slices_error(self, string):
+        with pytest.raises(SliceConversionError):
+            str_to_slices(string)
 
 
 @pytest.mark.parametrize(
