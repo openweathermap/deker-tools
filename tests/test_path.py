@@ -27,7 +27,7 @@ class TestIsEmpty:
             assert is_empty(Path(dir))
 
     def test_is_empty_raises(self):
-        with pytest.raises(IsADirectoryError):
+        with pytest.raises(NotADirectoryError):
             assert is_empty(__file__)
 
 
@@ -42,7 +42,7 @@ class TestIsPathValid:
         assert is_path_valid("/no/such/directory/anywhere") is None
 
     def test_is_path_valid_raises_for_file(self):
-        with pytest.raises(IsADirectoryError):
+        with pytest.raises(NotADirectoryError):
             assert is_path_valid(__file__)
 
     def test_is_path_valid_raises_for_too_long_name(self):
@@ -52,7 +52,7 @@ class TestIsPathValid:
 
     def test_is_path_valid_raises_for_invalid_root(self, monkeypatch):
         monkeypatch.setattr(os.path, "isdir", lambda path: False)
-        with pytest.raises(IsADirectoryError):
+        with pytest.raises(NotADirectoryError):
             is_path_valid("/no/such/directory")
 
     @staticmethod

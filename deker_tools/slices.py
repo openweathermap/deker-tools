@@ -76,9 +76,14 @@ def create_shape_from_slice(
 ) -> tuple[int, ...]:
     """Calculate shape of a subset from the index expression passed to __getitem__.
 
+    An integer index drops its axis; a slice keeps it with the number of the positions it selects, as
+    ``range`` counts them, for any sign of the step; the axes the expression leaves out are taken whole.
+
     :param array_shape: shape of the parent array
     :param index_exp: index expression passed to the array __getitem__ method
     :returns: shape of the subset selected by ``index_exp``
+    :raises IndexError: if an index is of another kind, there are too many of them, more than one ellipsis,
+      or a slice step is zero
     """
     if (
         isinstance(index_exp, EllipsisType)
@@ -567,6 +572,22 @@ def str_to_slices(string: str) -> FancySlice:
 class slice_converter(metaclass=_SliceConverter):  # noqa: N801
     """Converts slices to string and vice versa.
 
+    ``slice_converter[index expression]`` returns the string form of the expression, enclosed in square brackets;
+    ``slice_converter["[...]"]`` reads such a string back into a single index or a tuple of them. The string form
+    is what the server adapters send. The same conversions are the functions :func:`slices_to_str` and
+    :func:`str_to_slices`.
+
+    Writing accepts ``int``, ``float``, ``str``, ``datetime``, ``timedelta``, NumPy numbers and dates, ``None``,
+    ``...``, slices of them and a tuple or a list of all these. Booleans, ``nan``, infinity and containers other
+    than a tuple or a list raise :class:`SliceConversionError`.
+
+    Reading returns numbers as ``int`` or ``float``, an ISO 8601 duration (``PT3H``, ``-PT3H``, ``P1D``) as
+    ``timedelta``, ``None``, ``...`` and ``()`` as themselves, and everything else, dates included, as a string
+    label: a date is not turned into ``datetime``, the dimension of the array interprets the label, and a time
+    dimension reads ISO 8601 strings. Backticks are needed only around a label that would otherwise read as
+    a number, a date or a duration; any label may be quoted. A string that cannot be read raises
+    :class:`SliceConversionError`.
+
     Standard index expressions
         >>> slice_converter[5]
         '[5]'
@@ -607,7 +628,7 @@ class slice_converter(metaclass=_SliceConverter):  # noqa: N801
         >>> slice_converter['[`temperature`:`humidity`:2, `pressure`]']
         (slice('temperature', 'humidity', 2), 'pressure')
 
-    Quotes are optional for reading, unless the label looks like a number, a datetime or a keyword
+    Quotes are optional for reading, unless the label looks like a number, a date or a duration
         >>> slice_converter['[temperature:humidity:2, pressure]']
         (slice('temperature', 'humidity', 2), 'pressure')
         >>> slice_converter['[`10`, 10]']
