@@ -1,7 +1,8 @@
 Deker Tools
 ===========
 
-Deker Tools is a collection of utility functions and classes designed to assist in common data processing tasks. It consists of modules that handle data conversion, path validation, and slice manipulation.
+Deker Tools is a collection of utility functions and classes designed to assist in common data processing tasks.
+It consists of modules that handle data conversion, path validation, and slice manipulation.
 
 data
 ----
@@ -40,6 +41,16 @@ Convert slices to string and vice versa with slice_converter::
 
     > slice_converter[datetime.datetime(2023,1,1):datetime.datetime(2023,2,1), 0.1:0.9:0.05]
     '[`2023-01-01T00:00:00`:`2023-02-01T00:00:00`, 0.1:0.9:0.05]'
+
+The same conversions are available as typed functions, which is handy under a type checker: ``slices_to_str``
+always takes an index expression (a bare string is a label, not a slice string) and ``str_to_slices`` always
+takes a slice string::
+
+    > slices_to_str((5, slice(None, 10, 2)))
+    '[5, :10:2]'
+
+    > str_to_slices('[5, :10:2]')
+    (5, slice(None, 10, 2))
 
 time
 ------

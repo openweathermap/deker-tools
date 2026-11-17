@@ -1,5 +1,5 @@
 # deker-tools - shared functions library for deker components
-# Copyright (C) 2023  OpenWeather
+# Copyright (C) 2023-2026  OpenWeather
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,9 +18,10 @@ import math
 
 
 def convert_size_to_human(size_bytes: int) -> str:
-    """Convert bytes to human size.
+    """Convert bytes to human size: the largest binary unit (1024-based) that keeps the number above one.
 
     :param size_bytes: size in bytes
+    :returns: size rounded to two decimals with a unit suffix, e.g. ``"1.5 MB"``
     """
     if size_bytes == 0:
         return "0 B"

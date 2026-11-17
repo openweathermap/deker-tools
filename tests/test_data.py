@@ -6,6 +6,8 @@ from deker_tools.data import convert_size_to_human
 @pytest.mark.parametrize(
     ("bytes", "expected"),
     [
+        (0, "0 B"),
+        (512, "512.0 B"),
         (1052810, "1.0 MB"),
         (10489994, "10.0 MB"),
         (104861834, "100.0 MB"),

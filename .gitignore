@@ -148,3 +148,4 @@ cython_debug/
 tests/code_coverage/
 */tmp.py
 deker_tools/tmp.py
+.python-version

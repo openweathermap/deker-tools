@@ -9,7 +9,6 @@
 import os
 import sys
 
-
 project = "Deker tools"
 copyright = "2023-2026, Openweather Ltd."
 author = "Openweather Ltd."
@@ -116,5 +115,5 @@ html_theme_options = {
 }
 
 intersphinx_mapping = {
-    "deker": ("http://de1.owm.io:10000", None),
+    "deker": ("https://docs.deker.io", None),
 }
