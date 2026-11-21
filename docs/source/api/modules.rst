@@ -6,6 +6,7 @@ Deker tools API
 
    cancel
    data
+   hash_ring
    path
    slices
    time

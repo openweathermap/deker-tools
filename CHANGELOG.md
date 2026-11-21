@@ -40,6 +40,11 @@ consumer (`deker` and the adapters) pins `deker-tools>=2,<3` and is released wit
   `TokenCancelledError` or `TokenTimeoutError`; `cancellation_scope` lets an integration cancel the operations
   it starts; `resolve_timeout` takes the timeout of a call or the default.
 - The dependency `cantok>=0.0.43,<1`.
+- `deker_tools.hash_ring`: the consistent hash ring of a cluster, `HashRing`, and the key of an array on it,
+  `get_hash_key` (by the primary attributes, or by the id when there are none), moved here from the server
+  adapters. The placement of the keys is the same as before. `HashRing.get_node_pos` and `get_node` on a ring
+  without nodes, and `get_hash_key` for an array with neither primary attributes nor an id, raise
+  `HashRingError`.
 - `deker_tools.log.set_logger(format_string, logger_name)` sets the format of one logger and its
   children; without a name it still sets every logger of the process, as before.
 - `deker_tools.slices.slices_to_str` and `str_to_slices` are public: the server adapters use
