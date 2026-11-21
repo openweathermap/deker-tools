@@ -602,7 +602,7 @@ def test_create_shape_from_slice_raises(slice_):
 @pytest.mark.parametrize(
     ("dim_size", "slice_", "result"),
     [
-        (10, None, (0, 10, 1)),
+        (10, slice(None), (0, 10, 1)),
         (10, slice(10), (0, 10, 1)),
         (10, slice(1, 5, 3), (1, 5, 3)),
         (2, slice(1, 5, 3), (1, 2, 3)),  # bounds are clipped to the dimension, as range() would get them
@@ -619,6 +619,15 @@ def test_create_shape_from_slice_raises(slice_):
 )
 def test_match_slice_size(dim_size, slice_, result):
     assert match_slice_size(dim_size, slice_) == result
+
+
+def test_match_slice_size_without_a_slice_is_the_whole_dimension():
+    assert match_slice_size(10) == (0, 10, 1)
+
+
+def test_match_slice_size_does_not_take_none():
+    with pytest.raises(AttributeError):
+        match_slice_size(10, None)
 
 
 def test_match_slice_size_zero_step():

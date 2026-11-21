@@ -34,6 +34,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.26,<3",
+    "cantok>=0.0.43,<1",
 ]
 
 [project.urls]
@@ -87,6 +88,7 @@ dev = [
     "pytest-sugar>=1.1.1",
     "pytest-random-order>=1.2.0",
     "pytest-mock>=3.17.0",
+    "pytest-timeout>=2.4.0",
     "types-psutil>=7.2.2.20261111",
 ]
 docs = [

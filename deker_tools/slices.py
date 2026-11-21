@@ -56,17 +56,18 @@ FancySliceInput: TypeAlias = Union[
 ]
 
 
-def match_slice_size(dim_len: int, slice_: slice | None = None) -> tuple[int, int, int]:
+WHOLE_DIMENSION = slice(None)  # Slice of a whole dimension, the default of ``match_slice_size``.
+
+
+def match_slice_size(dim_len: int, slice_: slice = WHOLE_DIMENSION) -> tuple[int, int, int]:
     """Convert slice into a sequence and get its length.
 
     :param dim_len: length of the corresponding Dimension
-    :param slice_: slice to be converted
+    :param slice_: slice to be converted; not given - the whole dimension
     :returns: ``(start, stop, step)`` resolved against ``dim_len`` exactly as Python does for ``range``:
       ``None`` and negative bounds are resolved with the sign of the step in mind, bounds are clipped to the dimension
     :raises ValueError: if the step is zero
     """
-    if slice_ is None:
-        return 0, dim_len, 1
     return slice_.indices(dim_len)
 
 

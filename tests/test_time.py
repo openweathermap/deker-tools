@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from deker_tools.time import get_utc
+from deker_tools.typings import Sentinel
 
 UTC_DT = datetime(2026, 11, 12, 10, 30, 15, 123456, tzinfo=timezone.utc)
 
@@ -31,12 +32,24 @@ def test_get_utc_returns_the_same_moment_in_utc(dt):
     assert result.tzinfo is timezone.utc
 
 
-def test_get_utc_none_is_now():
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        pytest.param((), id="not-given"),
+        pytest.param((Sentinel,), id="sentinel"),
+    ],
+)
+def test_get_utc_without_a_moment_is_now(arguments):
     before = datetime.now(timezone.utc)
-    result = get_utc()
+    result = get_utc(*arguments)
     after = datetime.now(timezone.utc)
     assert before <= result <= after
     assert result.tzinfo is timezone.utc
+
+
+def test_get_utc_does_not_take_none():
+    with pytest.raises(TypeError):
+        get_utc(None)
 
 
 @pytest.mark.parametrize("dt", [b"2026-11-12T10:30:15", object(), [UTC_DT]])

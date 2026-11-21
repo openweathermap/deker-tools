@@ -16,18 +16,20 @@
 
 from datetime import datetime, timezone
 
+from deker_tools.typings import Sentinel, SentinelType, is_sentinel
 
-def get_utc(dt: str | int | float | datetime | None = None) -> datetime:
+
+def get_utc(dt: str | int | float | datetime | SentinelType = Sentinel) -> datetime:
     """Convert datetime with any timezone or without it to UTC.
 
     A naive datetime or ISO string is taken as UTC already; a timestamp is seconds since the epoch.
-    If dt is ``None`` - UTC current time will be returned
+    Without a moment, the current UTC time is returned.
 
-    :param dt: ``datetime.datetime`` object, timestamp, datetime iso-string or ``None``;
+    :param dt: ``datetime.datetime`` object, timestamp or datetime iso-string; not given - the current moment
     :returns: timezone-aware ``datetime.datetime`` in UTC
     :raises ValueError: if the string is not an ISO datetime
     """
-    if dt is None:
+    if is_sentinel(dt):
         return datetime.now(timezone.utc)
 
     if isinstance(dt, datetime):

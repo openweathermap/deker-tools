@@ -25,9 +25,21 @@ consumer (`deker` and the adapters) pins `deker-tools>=2,<3` and is released wit
   sign; a colon or a comma inside quotes does not split; the step after two dates is not lost.
 - `is_empty` and `is_path_valid` raise `NotADirectoryError` for a path that is not a directory, instead
   of `IsADirectoryError`.
+- An argument that is not given is `Sentinel`, not `None`: `get_utc()` without a moment returns the current
+  time, `get_utc(None)` raises `TypeError`; `match_slice_size(dim_len)` without a slice covers the whole
+  dimension, `None` is not accepted there anymore.
 
 ### Added
 
+- `deker_tools.typings`: `Sentinel`, the value of an argument that is not given, its type `SentinelType` and
+  `is_sentinel`. Every DEKER™ package takes them from here.
+- `deker_tools.cancel`: the cancellation tokens of the operations, built on
+  [cantok](https://github.com/pomponchik/cantok). `read_token` and `write_token` build the token of a read
+  (its timeout and the cancellation scope) and of a write (the scope until the first file of the write is
+  started, see `mark_started`); `check` and `cancellable` stop an operation at its cancellation points with
+  `TokenCancelledError` or `TokenTimeoutError`; `cancellation_scope` lets an integration cancel the operations
+  it starts; `resolve_timeout` takes the timeout of a call or the default.
+- The dependency `cantok>=0.0.43,<1`.
 - `deker_tools.log.set_logger(format_string, logger_name)` sets the format of one logger and its
   children; without a name it still sets every logger of the process, as before.
 - `deker_tools.slices.slices_to_str` and `str_to_slices` are public: the server adapters use
