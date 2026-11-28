@@ -1,5 +1,5 @@
 # deker-tools - shared functions library for deker components
-# Copyright (C) 2023  OpenWeather
+# Copyright (C) 2023-2026  Openweather Ltd.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,29 +15,30 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from datetime import datetime, timezone
-from typing import Optional, Union
+
+from deker_tools.typings import Sentinel, SentinelType, is_sentinel
 
 
-def get_utc(dt: Optional[Union[str, int, float, datetime]] = None) -> datetime:
+def get_utc(dt: str | int | float | datetime | SentinelType = Sentinel) -> datetime:
     """Convert datetime with any timezone or without it to UTC.
 
-    If dt is ``None`` - UTC current time will be returned
+    A naive datetime or ISO string is taken as UTC already; a timestamp is seconds since the epoch.
+    Without a moment, the current UTC time is returned.
 
-    :param dt: ``datetime.datetime`` object, timestamp, datetime iso-string or ``None``;
+    :param dt: ``datetime.datetime`` object, timestamp or datetime iso-string; not given - the current moment
+    :returns: timezone-aware ``datetime.datetime`` in UTC
+    :raises ValueError: if the string is not an ISO datetime
     """
-    if dt is None:
-        return datetime.utcnow().replace(tzinfo=timezone.utc)
+    if is_sentinel(dt):
+        return datetime.now(timezone.utc)
 
     if isinstance(dt, datetime):
-        dt = dt.isoformat()  # convert any timezone objects to native format
+        dt_object = dt
     elif isinstance(dt, (float, int)):
-        dt = datetime.utcfromtimestamp(dt).isoformat()
-
-    dt_object = datetime.fromisoformat(dt)
+        return datetime.fromtimestamp(dt, timezone.utc)
+    else:
+        dt_object = datetime.fromisoformat(dt)
 
     if dt_object.tzinfo is None:
-        dt_object = dt_object.replace(tzinfo=timezone.utc)
-    elif dt_object.tzinfo != timezone.utc:
-        tm = dt_object.timestamp()
-        dt_object = datetime.utcfromtimestamp(tm).replace(tzinfo=timezone.utc)
-    return dt_object
+        return dt_object.replace(tzinfo=timezone.utc)
+    return dt_object.astimezone(timezone.utc)

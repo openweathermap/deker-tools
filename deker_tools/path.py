@@ -1,5 +1,5 @@
 # deker-tools - shared functions library for deker components
-# Copyright (C) 2023  OpenWeather
+# Copyright (C) 2023-2026  Openweather Ltd.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -30,12 +30,14 @@ def is_empty(path: Pathlike) -> bool:
     """Check if directory is empty.
 
     :param path: Path to check
+    :returns: ``True`` if the directory has no entries, ``False`` otherwise
+    :raises NotADirectoryError: if the path is not a directory
     """
     if isinstance(path, Path):
         path = str(path)
 
     if not os.path.isdir(path):
-        raise IsADirectoryError(f"Path {path} is not a directory")
+        raise NotADirectoryError(f"Path {path} is not a directory")
 
     with os.scandir(path) as iterator:
         if any(iterator):
@@ -44,21 +46,25 @@ def is_empty(path: Pathlike) -> bool:
 
 
 def is_path_valid(path: Pathlike) -> None:
-    """Check if directory path is valid.
+    """Check if directory path is valid: an existing path shall be a directory, a missing one shall be creatable.
+
+    Every part of the path is probed with the file system: a part that is too long or has an invalid name raises.
 
     :param path: path to a directory
+    :raises NotADirectoryError: if the path, or the root of the file system, exists and is not a directory
+    :raises OSError: if a part of the path is too long or invalid for the file system
     """
     if isinstance(path, Path):
         path = str(path)
 
     if os.path.exists(path):
         if not os.path.isdir(path):
-            raise IsADirectoryError(f"Path {path} is not a directory")
+            raise NotADirectoryError(f"Path {path} is not a directory")
 
     _, path = os.path.splitdrive(path)
     root_dirname = os.environ.get("HOMEDRIVE", "C:") if sys.platform == "win32" else os.path.sep
     if not os.path.isdir(root_dirname):
-        raise IsADirectoryError(f"Path {root_dirname} is not a directory")
+        raise NotADirectoryError(f"Path {root_dirname} is not a directory")
     root_dirname = root_dirname.rstrip(os.path.sep) + os.path.sep
     for part in path.split(os.path.sep):
         try:
